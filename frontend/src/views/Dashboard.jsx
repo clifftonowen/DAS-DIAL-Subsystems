@@ -1,48 +1,108 @@
 import { useEffect, useState } from "react";
-import { listLearners, generateProfile, generateActivity } from "../lib/api";
+import { listLearners } from "../lib/api";
 import { supabase } from "../lib/supabase";
+import Brand from "../components/Brand";
+import Button from "../components/Button";
+import Card from "../components/Card";
+
+function LearnerCardSkeleton() {
+  return (
+    <Card className="flex animate-pulse items-center justify-between">
+      <div className="space-y-2">
+        <div className="h-4 w-32 rounded bg-brand-muted" />
+        <div className="h-3 w-20 rounded bg-brand-muted" />
+      </div>
+      <div className="flex gap-2">
+        <div className="h-9 w-24 rounded-lg bg-brand-muted" />
+        <div className="h-9 w-32 rounded-lg bg-brand-muted" />
+      </div>
+    </Card>
+  );
+}
 
 export default function Dashboard() {
   const [learners, setLearners] = useState([]);
-  const [output, setOutput] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  useEffect(() => { listLearners().then(setLearners).catch((e) => setErr(e.message)); }, []);
-
-  async function runProfile(id) {
-    setErr("");
-    try { setOutput(await generateProfile(id)); } catch (e) { setErr(e.message); }
-  }
-  async function runActivity(id) {
-    setErr("");
-    try { setOutput(await generateActivity(id, { literacy_objective: "decoding", level: "Band A" })); }
-    catch (e) { setErr(e.message); }
-  }
+  useEffect(() => {
+    listLearners()
+      .then(setLearners)
+      .catch((e) => setErr(e.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
-      <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Learners</h1>
-        <button className="text-sm text-slate-500" onClick={() => supabase.auth.signOut()}>Sign out</button>
+    <div className="min-h-dvh bg-brand-bg">
+      <header className="sticky top-0 z-10 border-b border-brand-border bg-white/90 backdrop-blur px-6 py-4">
+        <div className="mx-auto flex max-w-4xl items-center justify-between">
+          <Brand />
+          <Button variant="ghost" onClick={() => supabase.auth.signOut()}>
+            Sign out
+          </Button>
+        </div>
       </header>
-      {err && <p className="mb-4 text-sm text-red-600">{err}</p>}
-      <div className="grid gap-3">
-        {learners.length === 0 && <p className="text-slate-500">No learners yet. Seed the DB or upload assessments.</p>}
-        {learners.map((l) => (
-          <div key={l.id} className="flex items-center justify-between rounded-lg bg-white p-4 shadow-sm">
-            <div><p className="font-medium">{l.pseudonym}</p><p className="text-sm text-slate-500">{l.band_level}</p></div>
-            <div className="flex gap-2">
-              <button className="rounded bg-slate-200 px-3 py-1 text-sm" onClick={() => runProfile(l.id)}>Profile</button>
-              <button className="rounded bg-slate-900 px-3 py-1 text-sm text-white" onClick={() => runActivity(l.id)}>Generate activity</button>
-            </div>
+
+      <main className="mx-auto max-w-4xl space-y-6 p-6">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-brand-fg">Learners</h1>
+          <p className="text-sm text-brand-fg/70">
+            {loading ? "Loading…" : `${learners.length} learner${learners.length === 1 ? "" : "s"}`}
+          </p>
+        </div>
+
+        {err && (
+          <Card role="alert" className="border-brand-destructive/40 bg-red-50 text-brand-destructive">
+            {err}
+          </Card>
+        )}
+
+        {loading && (
+          <div className="grid gap-3">
+            <LearnerCardSkeleton />
+            <LearnerCardSkeleton />
+            <LearnerCardSkeleton />
           </div>
-        ))}
-      </div>
-      {output && (
-        <pre className="mt-6 overflow-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100">
-          {JSON.stringify(output, null, 2)}
-        </pre>
-      )}
+        )}
+
+        {!loading && !err && learners.length === 0 && (
+          <Card className="text-center text-brand-fg/70">
+            No learners yet. Seed the DB or upload assessments.
+          </Card>
+        )}
+
+        {!loading && learners.length > 0 && (
+          <div className="grid gap-3">
+            {learners.map((l) => (
+              <Card key={l.id} className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium text-brand-fg">{l.pseudonym}</p>
+                  <span className="inline-block rounded-full bg-brand-muted px-2 py-0.5 text-xs font-medium text-brand-fg/70">
+                    {l.band_level}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium text-brand-fg/50">Coming soon</span>
+                  <Button
+                    variant="secondary"
+                    disabled
+                    title="Generate Profile — Subsystem 2, next iteration"
+                  >
+                    Generate Profile
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled
+                    title="Generate Activity — Subsystem 3, next iteration"
+                  >
+                    Generate Activity
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </main>
     </div>
   );
 }

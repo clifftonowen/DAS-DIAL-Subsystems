@@ -46,13 +46,13 @@ export default function Dashboard() {
       <main className="mx-auto max-w-4xl space-y-6 p-6">
         <div>
           <h1 className="font-display text-2xl font-bold text-brand-fg">Learners</h1>
-          <p className="text-sm text-brand-fg/70">
+          <p className="text-sm text-brand-fg-muted">
             {loading ? "Loading…" : `${learners.length} learner${learners.length === 1 ? "" : "s"}`}
           </p>
         </div>
 
         {err && (
-          <Card role="alert" className="border-brand-destructive/40 bg-red-50 text-brand-destructive">
+          <Card role="alert" className="border-brand-destructive/40 bg-brand-bg text-brand-destructive">
             {err}
           </Card>
         )}
@@ -66,7 +66,7 @@ export default function Dashboard() {
         )}
 
         {!loading && !err && learners.length === 0 && (
-          <Card className="text-center text-brand-fg/70">
+          <Card className="text-center text-brand-fg-muted">
             No learners yet. Seed the DB or upload assessments.
           </Card>
         )}
@@ -77,12 +77,12 @@ export default function Dashboard() {
               <Card key={l.id} className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="font-medium text-brand-fg">{l.pseudonym}</p>
-                  <span className="inline-block rounded-full bg-brand-muted px-2 py-0.5 text-xs font-medium text-brand-fg/70">
+                  <span className="inline-block rounded-full bg-brand-muted px-2 py-0.5 text-xs font-medium text-brand-fg-muted">
                     {l.band_level}
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-medium text-brand-fg/50">Coming soon</span>
+                  <span className="text-xs font-medium text-brand-fg-muted">Coming soon</span>
                   <Button
                     variant="secondary"
                     disabled

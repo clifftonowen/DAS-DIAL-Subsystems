@@ -43,7 +43,7 @@ export default function AuthView({ onAuthed }) {
       <Card className="w-full max-w-sm space-y-5 p-6">
         <div className="space-y-1">
           <Brand size="lg" />
-          <p className="text-sm text-brand-fg/70">
+          <p className="text-sm text-brand-fg-muted">
             {mode === "login" ? "Log in to your therapist account" : "Create a therapist account"}
           </p>
         </div>
@@ -85,7 +85,7 @@ export default function AuthView({ onAuthed }) {
                 type="button"
                 onClick={() => setShowPassword((s) => !s)}
                 aria-label={showPassword ? "Hide password" : "Show password"}
-                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-brand-fg/60
+                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-brand-fg-muted
                   hover:text-brand-fg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-ring/40 rounded-lg cursor-pointer"
               >
                 {showPassword ? (
@@ -110,7 +110,7 @@ export default function AuthView({ onAuthed }) {
             </p>
           )}
           {notice && (
-            <p role="status" className="text-sm font-medium text-brand-accent">
+            <p role="status" className="text-sm font-medium text-brand-success">
               {notice}
             </p>
           )}

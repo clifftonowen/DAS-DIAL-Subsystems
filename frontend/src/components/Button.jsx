@@ -1,6 +1,6 @@
 const variants = {
   primary:
-    "bg-brand-primary text-brand-on-primary hover:bg-brand-fg disabled:hover:bg-brand-primary",
+    "bg-brand-primary text-brand-on-primary hover:bg-brand-primary-hover disabled:hover:bg-brand-primary",
   secondary:
     "bg-brand-muted text-brand-fg hover:bg-brand-border disabled:hover:bg-brand-muted",
   ghost:

@@ -10,6 +10,9 @@ frontend/.env
 frontend/.vite/
 # os
 .DS_Store
+# curriculum source PDFs + ingestion logs (Subsystem 3 — gitignored source material)
+backend/data/curriculum/*.pdf
+backend/data/curriculum/_orphans.log
 
 CLAUDE.md
 IMPLEMENTATION_PLAN.md

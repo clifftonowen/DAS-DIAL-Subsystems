@@ -23,19 +23,20 @@ INGEST_VERSION = "v1"
 
 def parse_pdf(path: Path) -> tuple[str, list[CurriculumChunk]]:
     """Read + detect + parse + build (no embedding, no DB). Returns (parser_name, chunks)."""
+    from app.ingestion.bands import band_for_path
     from app.ingestion.pdf_reader import read_pdf
     from app.ingestion.parsers.registry import detect_parser
     from app.ingestion.chunk_builder import build_chunks
 
     doc = read_pdf(path)
-    parser = detect_parser(doc)
+    parser = detect_parser(doc, band=band_for_path(path))
     units = parser.parse(doc)
     return parser.name, build_chunks(units, ingest_version=INGEST_VERSION)
 
 
 def _resolve_paths(file: str | None, all_: bool) -> list[Path]:
     if all_:
-        return sorted(DATA_DIR.glob("*.pdf"))
+        return sorted(DATA_DIR.glob("**/*.pdf"))  # recurse into band_a/ band_b/ band_c/
     if file:
         return [Path(file)]
     return []
@@ -86,9 +87,12 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     """Offline sanity check for one source: rebuild chunks and assert the ingestion invariants."""
-    path = DATA_DIR / args.source if not Path(args.source).exists() else Path(args.source)
-    if not path.exists():
-        print(f"!! missing: {path}")
+    if Path(args.source).exists():
+        path = Path(args.source)
+    else:  # bare filename — search the band subfolders
+        path = next(DATA_DIR.glob(f"**/{args.source}"), None)
+    if path is None or not path.exists():
+        print(f"!! missing: {args.source} (searched {DATA_DIR}/**/)")
         return 1
 
     parser_name, chunks = parse_pdf(path)

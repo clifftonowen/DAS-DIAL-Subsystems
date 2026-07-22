@@ -12,6 +12,7 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.gateways.llm_client import LLMApiClient
+from app.ingestion.bands import BAND_DIRS, band_for_path
 from app.ingestion.chunk_builder import build_chunks
 from app.ingestion.parsers.registry import detect_parser
 from app.ingestion.pdf_reader import Document, read_pdf
@@ -57,10 +58,15 @@ def _log_orphans(doc: Document) -> int:
     return len(orphans)
 
 
-def ingest_file(path: str | Path, no_embed: bool = False) -> int:
-    """Ingest one PDF end-to-end. Returns the number of chunks stored."""
+def ingest_file(path: str | Path, no_embed: bool = False, band: str | None = None) -> int:
+    """Ingest one PDF end-to-end. Returns the number of chunks stored.
+
+    band defaults to the source folder's band (data/curriculum/<band folder>/); B and C route to
+    empty stub parsers until their layouts are analysed.
+    """
+    band = band or band_for_path(path)
     doc = read_pdf(path)
-    parser = detect_parser(doc)
+    parser = detect_parser(doc, band=band)
     units = parser.parse(doc)
     chunks = build_chunks(units, ingest_version=INGEST_VERSION)
     _log_orphans(doc)
@@ -80,5 +86,13 @@ def ingest_file(path: str | Path, no_embed: bool = False) -> int:
 
 
 def ingest_all(no_embed: bool = False) -> int:
-    """Ingest every PDF in data/curriculum/. Returns total chunks stored."""
-    return sum(ingest_file(pdf, no_embed=no_embed) for pdf in sorted(DATA_DIR.glob("*.pdf")))
+    """Ingest every PDF under data/curriculum/<band folder>/. Returns total chunks stored.
+
+    Walks each band folder in turn so a file's band is fixed by where it sits. Band B/C folders
+    contribute 0 chunks until their stub parsers are implemented.
+    """
+    total = 0
+    for band, subdir in BAND_DIRS.items():
+        for pdf in sorted((DATA_DIR / subdir).glob("*.pdf")):
+            total += ingest_file(pdf, no_embed=no_embed, band=band)
+    return total

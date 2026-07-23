@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_llm_model: str = "llama3.2:latest"
     ollama_embedding_model: str = "nomic-embed-text:latest"
-    ollama_embedding_dim: int = 768  # nomic-embed-text; schema.sql uses vector(1536) — see note
+    ollama_embedding_dim: int = 768  # nomic-embed-text; matches vector(768) for curriculum_chunks
 
     # App
     app_name: str = "DAS D.I.A.L"

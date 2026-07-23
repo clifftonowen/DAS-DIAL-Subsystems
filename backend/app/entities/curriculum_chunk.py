@@ -90,7 +90,7 @@ class CurriculumChunk(BaseModel):
     page_end: str | None = None
 
     # vector + bookkeeping
-    embedding: list[float] | None = None     # 1536-dim; populated by the pipeline before upsert
+    embedding: list[float] | None = None     # 768-dim (nomic-embed-text); populated by the pipeline before upsert
     embedding_model: str | None = None
     ingest_version: str | None = None
     raw_header: str | None = None            # debugging

@@ -114,7 +114,7 @@ create table if not exists curriculum_chunks (
   page_end text,
 
   -- vector + bookkeeping
-  embedding vector(1536),
+  embedding vector(768),                    -- nomic-embed-text (Ollama, default provider)
   embedding_model text,
   ingest_version text,
   raw_header text,                         -- debugging
@@ -138,7 +138,7 @@ create index if not exists idx_curriculum_source
 -- Mirrors match_strategies(); used by CurriculumRepository.match_curriculum().
 -- Filters run in WHERE (correctness); the vector only ranks survivors (relevance).
 create or replace function match_curriculum(
-  query_embedding vector(1536),
+  query_embedding vector(768),
   filter_band text default null,
   filter_concept text default null,
   filter_stage text default null,

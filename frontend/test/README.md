@@ -113,15 +113,13 @@ test("clicking Sign out calls supabase.auth.signOut", async () => {
 });
 ```
 
-## Already handled for you
-
 No per-test setup needed for any of this (all via `jest.config.cjs` + `src/setupTests.js`):
 
 - `.css` / Tailwind imports and image/asset imports are auto-stubbed.
 - jest-dom matchers (`toBeInTheDocument`, `toHaveTextContent`, …) are loaded globally.
 - A `TextEncoder` polyfill is in place so `react-router` works under jsdom.
 
-## Common gotchas
+## Common traps
 
 - Import the component with `../Name` (out of `__tests__`), and mock lib modules with
   `../../lib/...`.

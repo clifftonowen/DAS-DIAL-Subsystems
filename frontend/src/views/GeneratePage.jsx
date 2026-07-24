@@ -100,11 +100,10 @@ export default function GeneratePage() {
         <div className="relative flex-1" ref={dropdownRef}>
           {/* Search Input */}
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 opacity-50">🔍</span>
             <input
               type="text"
               placeholder="Type a learner's name…"
-              className="h-12 w-full rounded-lg border-2 border-brand-border py-0 pl-11 pr-4 text-base outline-none transition-colors focus:border-brand-primary"
+              className="h-12 w-full rounded-lg border-2 border-brand-border py-0 pl-4 pr-4 text-base outline-none transition-colors focus:border-brand-primary"
               value={query}
               onChange={handleSearchChange}
               onFocus={() => setIsDropdownOpen(true)}
@@ -152,7 +151,7 @@ export default function GeneratePage() {
           onClick={handleGenerate}
           className="h-12 px-6"
         >
-          {isGenerating ? "⏳ Generating..." : "⚡ Generate"}
+          {isGenerating ? "Generating..." : "Generate"}
         </Button>
       </div>
 

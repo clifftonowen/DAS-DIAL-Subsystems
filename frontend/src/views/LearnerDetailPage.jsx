@@ -134,18 +134,18 @@ export default function LearnerDetailPage() {
             {isGenerating ? "Generating..." : "Generate Profile"}
           </Button>
           <Button variant="secondary" onClick={() => navigate("/generate")}>Generate Activity</Button>
-          <Button variant="ghost">📤 Share</Button>
+          <Button variant="ghost">Share</Button>
         </div>
       </div>
 
       {profile ? (
         <>
           {/* ── Deficiency Alerts ── */}
-          <h2 className="mb-3 text-[15px] font-semibold text-brand-fg">⚠️ Skill Deficiency Alerts</h2>
+          <h2 className="mb-3 text-[15px] font-semibold text-brand-fg">Skill Deficiency Alerts</h2>
           <DeficiencyAlerts skills={profile} />
 
           {/* ── Skills Visualisation ── */}
-          <h2 className="mb-3 text-[15px] font-semibold text-brand-fg">📊 Skills Overview</h2>
+          <h2 className="mb-3 text-[15px] font-semibold text-brand-fg">Skills Overview</h2>
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
             {/* Radar Chart */}
             <div className="rounded-xl border border-brand-border bg-white p-5 shadow-sm">

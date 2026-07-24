@@ -61,7 +61,7 @@ export default function Calendar({ events = [] }) {
 
       {/* ── Header: title + nav buttons ── */}
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-semibold text-brand-fg">📅 Calendar</p>
+        <p className="text-sm font-semibold text-brand-fg">Calendar</p>
         <div className="flex items-center gap-2">
           <button
             onClick={prevMonth}

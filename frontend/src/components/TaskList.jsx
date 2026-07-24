@@ -2,7 +2,7 @@
 // Matches the prototype's .task-card widgets (Today's Tasks + Upcoming).
 //
 // Props:
-//   title  {string}     — section heading e.g. "📋 Today's Tasks"
+//   title  {string}     — section heading e.g. "Today's Tasks"
 //   tasks  {Array}      — array of { text: string, meta: string, done?: boolean }
 //
 // Internal state:

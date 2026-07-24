@@ -55,22 +55,16 @@ export default function MainPage() {
 
   const statCards = [
     {
-      icon: "⚠️",
-      iconBg: "bg-red-100",
       title: "Flagged Activities",
       subtitle: `${stats?.flagged || 0} activities need your review`,
       trailing: <span className="text-lg font-bold text-brand-fg">{stats?.flagged || 0}</span>,
     },
     {
-      icon: "📊",
-      iconBg: "bg-yellow-100",
       title: "Needs Profiling",
       subtitle: `${stats?.needs_profiling || 0} learners missing a profile`,
       trailing: <span className="text-lg font-bold text-brand-fg">{stats?.needs_profiling || 0}</span>,
     },
     {
-      icon: "🔴",
-      iconBg: "bg-red-100",
       title: "High Risk",
       subtitle: `${stats?.high_risk || 0} learners with high risk`,
       trailing: (
@@ -80,8 +74,6 @@ export default function MainPage() {
       ),
     },
     {
-      icon: "📅",
-      iconBg: "bg-blue-100",
       title: "Inactive Learners",
       subtitle: `${stats?.inactive || 0} learner inactive 30+ days`,
       trailing: <span className="text-lg font-bold text-brand-fg">{stats?.inactive || 0}</span>,
@@ -110,8 +102,8 @@ export default function MainPage() {
 
       {/* ── Task panel — right column ── */}
       <div className="flex flex-col gap-4 overflow-y-auto">
-        <TaskList title="📋 Today's Tasks" tasks={tasks.today} />
-        <TaskList title="📌 Upcoming"       tasks={tasks.upcoming} />
+        <TaskList title="Today's Tasks" tasks={tasks.today} />
+        <TaskList title="Upcoming"      tasks={tasks.upcoming} />
       </div>
     </div>
   );

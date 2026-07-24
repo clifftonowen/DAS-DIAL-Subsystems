@@ -62,7 +62,6 @@ export default function LearnersPage() {
         <div className="flex items-center gap-2.5">
           {/* Search bar */}
           <div className="flex items-center gap-2 rounded-lg border border-brand-border bg-white px-3 py-2 text-sm text-brand-fg focus-within:border-brand-primary focus-within:ring-1 focus-within:ring-brand-primary">
-            <span className="opacity-50">🔍</span>
             <input
               type="text"
               placeholder="Search learners…"
@@ -74,12 +73,12 @@ export default function LearnersPage() {
           
           {/* Filter button */}
           <button className="flex items-center gap-1.5 rounded-lg border border-brand-border bg-white px-3 py-2 text-sm font-medium text-brand-fg transition-colors hover:bg-brand-muted">
-            <span className="opacity-70">⚙️</span> Filter
+            Filter
           </button>
         </div>
 
         <Button onClick={() => setShowUpload(true)}>
-          📤 Upload Assessment
+          Upload Assessment
         </Button>
       </div>
 

@@ -67,6 +67,10 @@ the top two run against a dedicated Supabase **test** project (see below).
 | **E2E** | one full-stack flow per use case, real DB + real JWT | `pytest` + real Supabase | `backend/tests/e2e` |
 | **System** | real UI in a real browser per use case | `pytest` + **Selenium** (headless Chrome) | `backend/tests/system` |
 
+Two more frontend tiers are **scaffolded** (stubs — fill in as features grow): frontend
+**integration** (Jest + MSW) in `frontend/src/views/__integration__/`, and frontend **e2e**
+(Playwright) in `frontend/e2e/`. See each folder's README.
+
 ### Install
 ```bash
 cd backend  && pip install -r requirements.txt -r requirements-dev.txt

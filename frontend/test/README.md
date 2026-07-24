@@ -1,7 +1,11 @@
 # Frontend UI tests (Jest + React Testing Library)
 
-How to write and run unit tests for React components. Run everything from the
+How to write and run **unit** tests for React components. Run everything from the
 `frontend/` directory.
+
+> Two more frontend tiers are **scaffolded** (stubs, fill in as features land):
+> **integration** (Jest + MSW) in [`src/views/__integration__/`](../src/views/__integration__/README.md),
+> and **e2e** (Playwright) in [`e2e/`](../e2e/README.md).
 
 ```bash
 npm install                   # once — installs Jest, RTL, babel, etc.

@@ -52,7 +52,7 @@ export default function UploadView({ learners, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/70 p-4">
       <Card className="w-full max-w-lg space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg font-bold text-brand-fg">Upload Assessment Data</h2>

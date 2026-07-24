@@ -25,8 +25,26 @@ class CurriculumRepository(BaseRepository):
         stage: str | None = None,
         match_count: int = 3,
     ) -> list[dict]:
-        """Metadata-filtered vector retrieval (used later by the retrieval layer)."""
+        """Metadata-filtered vector retrieval (pure semantic; kept for A/B + fallback)."""
         return match_curriculum_rpc(query_vector, band, concept, stage, match_count)
+
+    def hybrid_match_curriculum(
+        self,
+        query_vector: list[float],
+        query_text: str,
+        band: str | None = None,
+        concept: str | None = None,
+        stage: str | None = None,
+        match_count: int = 3,
+        rrf_k: int = 50,
+        full_text_weight: float = 1.0,
+        semantic_weight: float = 1.0,
+    ) -> list[dict]:
+        """Hybrid retrieval: vector + full-text fused by RRF (see hybrid_match_curriculum RPC)."""
+        return hybrid_match_curriculum_rpc(
+            query_vector, query_text, band, concept, stage,
+            match_count, rrf_k, full_text_weight, semantic_weight,
+        )
 
 
 def match_curriculum_rpc(query_vector, band, concept, stage, match_count):
@@ -41,6 +59,32 @@ def match_curriculum_rpc(query_vector, band, concept, stage, match_count):
                 "filter_concept": concept,
                 "filter_stage": stage,
                 "match_count": match_count,
+            },
+        )
+        .execute()
+        .data
+    )
+
+
+def hybrid_match_curriculum_rpc(
+    query_vector, query_text, band, concept, stage,
+    match_count, rrf_k, full_text_weight, semantic_weight,
+):
+    from app.core.supabase_client import get_supabase
+    return (
+        get_supabase()
+        .rpc(
+            "hybrid_match_curriculum",
+            {
+                "query_embedding": query_vector,
+                "query_text": query_text,
+                "filter_band": band,
+                "filter_concept": concept,
+                "filter_stage": stage,
+                "match_count": match_count,
+                "rrf_k": rrf_k,
+                "full_text_weight": full_text_weight,
+                "semantic_weight": semantic_weight,
             },
         )
         .execute()

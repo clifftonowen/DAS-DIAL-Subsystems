@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     ollama_embedding_model: str = "nomic-embed-text:latest"
     ollama_embedding_dim: int = 768  # nomic-embed-text; matches vector(768) for curriculum_chunks
 
+    # Generation sampling — temperature 0 + fixed seed = reproducible output (same input -> same activity)
+    ollama_temperature: float = 0.0
+    ollama_seed: int = 42
+
     # App
     app_name: str = "DAS D.I.A.L"
     cors_origins: str = "http://localhost:5173"

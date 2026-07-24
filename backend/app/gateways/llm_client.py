@@ -18,7 +18,8 @@ class LLMProvider(Protocol):
 
     embed_dim: int
 
-    def complete(self, prompt: str) -> str: ...
+    def complete(self, prompt: str, system: str | None = None,
+                 temperature: float | None = None, seed: int | None = None) -> str: ...
     def embed_many(self, texts: list[str]) -> list[list[float]]: ...
 
 
@@ -34,15 +35,27 @@ class OllamaProvider:
         self.llm_model = settings.ollama_llm_model
         self.embedding_model = settings.ollama_embedding_model
         self.embed_dim = settings.ollama_embedding_dim
+        self.temperature = settings.ollama_temperature
+        self.seed = settings.ollama_seed
 
-    def complete(self, prompt: str) -> str:
+    def complete(self, prompt: str, system: str | None = None,
+                 temperature: float | None = None, seed: int | None = None) -> str:
         import httpx  # lazy: only when a real completion is requested
 
-        resp = httpx.post(
-            f"{self.base_url}/api/generate",
-            json={"model": self.llm_model, "prompt": prompt, "stream": False},
-            timeout=120.0,
-        )
+        # Per-call overrides win; otherwise fall back to the .env/settings defaults.
+        # temperature 0 + fixed seed -> deterministic output (reproducible activities).
+        payload = {
+            "model": self.llm_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": self.temperature if temperature is None else temperature,
+                "seed": self.seed if seed is None else seed,
+            },
+        }
+        if system:
+            payload["system"] = system  # Ollama /api/generate applies this as the system role
+        resp = httpx.post(f"{self.base_url}/api/generate", json=payload, timeout=120.0)
         resp.raise_for_status()
         return resp.json().get("response", "")
 
@@ -67,9 +80,11 @@ class OpenAIProvider:
 
     embed_dim = 1536  # text-embedding-3-small; matches vector(1536) in schema.sql
 
-    def complete(self, prompt: str) -> str:
-        # TODO: call langchain-openai ChatOpenAI(model=settings.llm_model)
-        return f"[stub completion for prompt of {len(prompt)} chars]"
+    def complete(self, prompt: str, system: str | None = None,
+                 temperature: float | None = None, seed: int | None = None) -> str:
+        # TODO: call langchain-openai ChatOpenAI(model=settings.llm_model, temperature=...) with a system message
+        sys_note = f" (system: {len(system)} chars)" if system else ""
+        return f"[stub completion for prompt of {len(prompt)} chars{sys_note}]"
 
     def embed_many(self, texts: list[str]) -> list[list[float]]:
         if not settings.openai_api_key:
@@ -115,8 +130,9 @@ class LLMApiClient:
     def embed_dim(self) -> int:
         return self.provider.embed_dim
 
-    def complete(self, prompt: str) -> str:
-        return self.provider.complete(prompt)
+    def complete(self, prompt: str, system: str | None = None,
+                 temperature: float | None = None, seed: int | None = None) -> str:
+        return self.provider.complete(prompt, system, temperature=temperature, seed=seed)
 
     def embed(self, text: str) -> list[float]:
         return self.embed_many([text])[0]

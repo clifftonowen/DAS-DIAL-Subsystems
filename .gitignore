@@ -8,11 +8,17 @@ backend/.env
 # node
 node_modules/
 dist/
-frontend/.env
+#frontend/.env
 frontend/.vite/
 # os
 .DS_Store
+# curriculum source PDFs + ingestion logs (Subsystem 3 — gitignored source material)
+backend/data/curriculum/**/*.pdf
+backend/data/curriculum/_orphans.log
 
 CLAUDE.md
 IMPLEMENTATION_PLAN.md
 DEMO_PLAN.md
+INGESTION(1).md
+# personal scratch notes (local only)
+note.md

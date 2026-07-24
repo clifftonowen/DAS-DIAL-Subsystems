@@ -46,3 +46,38 @@ class ReviewIn(BaseModel):
 class ShareIn(BaseModel):
     activity_id: str
     recipient_email: str
+
+class SubtestResult(BaseModel):
+    name: str
+    standard_score: int
+    percentile: int
+
+
+class TaskResult(BaseModel):
+    name: str
+    score: int
+    max_score: int
+
+
+class AssessmentPreview(BaseModel):
+    """Returned by POST /assessments/preview. The frontend renders this as
+    a review card; the therapist confirms before anything is saved."""
+    learner_id: str
+    assessment_date: str
+    tasks: list[TaskResult] = []
+    strengths: list[str] = []
+    weaknesses: list[str] = []
+    confidence_score: float = 0.0
+    risk_score: float = 0.0
+    task_results: dict = {}
+    notes: str = ""
+
+
+class AssessmentConfirmRequest(BaseModel):
+    learner_id: str
+    assessment_date: str
+    risk_score: float
+    task_results: dict
+    strengths: list[str] = []
+    weaknesses: list[str] = []
+    confidence_score: float = 0.0

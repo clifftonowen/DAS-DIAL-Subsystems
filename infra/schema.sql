@@ -95,3 +95,83 @@ language sql stable as $$
   order by embedding <=> query_embedding
   limit match_count;
 $$;
+
+-- ============================================================
+-- Subsystem 3: curriculum corpus (RAG exemplars)
+-- Distinct from instructional_strategies (ELL-MLP strategy corpus)
+-- and from learning_activities (generated, per-learner output).
+-- ============================================================
+create table if not exists curriculum_chunks (
+  id uuid primary key default gen_random_uuid(),
+
+  -- filters
+  band text not null,                      -- 'A1' | 'A2' | 'A3'  (finer than learners.band_level)
+  module text,                             -- 'Barebone Sentence' | 'Predicate Expanders'
+  concept text not null,                   -- 'action_predicate' | 'all' | ...  <- curriculum join key
+  stage text,                              -- 'presentation' | 'practice' | 'production' | ...
+  sequence_no int default 1,               -- Practice worksheet 1 vs 2 vs 3
+  doc_type text not null default 'lesson_plan',   -- lesson_plan | resource
+  writing_traits text[] default '{}',      -- 6+1, lowercased; optional filter (63% coverage)
+  cognitive_constructs text[] default '{}',-- bridge to learner_profiles' seven floats
+
+  -- content (fed to the LLM after retrieval)
+  activity_title text,                     -- body heading; best discriminator on metadata ties
+  content_md text not null,                -- full worksheet / teaching text
+  answer_key text,
+  objective text,
+
+  -- guardrail
+  prerequisites text[] default '{}',       -- scope-and-sequence as data
+
+  -- provenance
+  source_file text not null,
+  page_start text,
+  page_end text,
+
+  -- vector + bookkeeping
+  embedding vector(768),                    -- nomic-embed-text (Ollama, default provider)
+  embedding_model text,
+  ingest_version text,
+  raw_header text,                         -- debugging
+  embed_text text,                         -- optional: "why did this match?"
+
+  -- reserved for v2 (create, leave empty)
+  skills text[] not null default '{}'
+);
+
+create index if not exists idx_curriculum_embedding
+  on curriculum_chunks using hnsw (embedding vector_cosine_ops);
+create index if not exists idx_curriculum_filter
+  on curriculum_chunks (band, module, concept, stage);
+create index if not exists idx_curriculum_traits
+  on curriculum_chunks using gin (writing_traits);
+create index if not exists idx_curriculum_constructs
+  on curriculum_chunks using gin (cognitive_constructs);
+create index if not exists idx_curriculum_source
+  on curriculum_chunks (source_file);
+
+-- Mirrors match_strategies(); used by CurriculumRepository.match_curriculum().
+-- Filters run in WHERE (correctness); the vector only ranks survivors (relevance).
+create or replace function match_curriculum(
+  query_embedding vector(768),
+  filter_band text default null,
+  filter_concept text default null,
+  filter_stage text default null,
+  match_count int default 3
+)
+returns table (
+  id uuid, activity_title text, content_md text, answer_key text,
+  concept text, stage text, source_file text, page_start text, similarity float
+)
+language sql stable as $$
+  select c.id, c.activity_title, c.content_md, c.answer_key,
+         c.concept, c.stage, c.source_file, c.page_start,
+         1 - (c.embedding <=> query_embedding) as similarity
+  from curriculum_chunks c
+  where c.doc_type = 'lesson_plan'
+    and (filter_band    is null or c.band    = filter_band)
+    and (filter_concept is null or c.concept = filter_concept)
+    and (filter_stage   is null or c.stage   = filter_stage)
+  order by c.embedding <=> query_embedding
+  limit match_count;
+$$;

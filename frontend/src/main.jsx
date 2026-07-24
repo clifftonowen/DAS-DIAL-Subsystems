@@ -12,7 +12,7 @@ function App() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
-  return session ? <Dashboard /> : <AuthView />;
+  return session ? <Dashboard session={session} /> : <AuthView />;
 }
 
 createRoot(document.getElementById("root")).render(<App />);

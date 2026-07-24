@@ -16,9 +16,8 @@
 //     └── <main>   <Outlet />      — right column, scrollable
 
 import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
-import { supabase } from "../lib/supabase";
 import Brand from "../components/Brand";
-import Button from "../components/Button";
+import ProfileMenu from "../components/ProfileMenu";
 import DashboardSidebar from "../components/DashboardSidebar";
 
 // --- DASHBOARD PROTOTYPE ADDITIONS ---
@@ -31,7 +30,7 @@ import GeneratePage from "./GeneratePage";
 
 // Inner shell — the actual header + sidebar + outlet layout.
 // Separated from Dashboard so BrowserRouter wraps it correctly.
-function DashboardShell() {
+function DashboardShell({ session }) {
   return (
     // .shell-grid defined in index.css:
     //   grid-template-columns: 220px 1fr
@@ -44,10 +43,8 @@ function DashboardShell() {
                          border-b border-brand-border bg-white px-6 py-3
                          sticky top-0 z-10">
         <Brand />
-        {/* Sign out delegates directly to Supabase auth — no router needed */}
-        <Button variant="ghost" onClick={() => supabase.auth.signOut()}>
-          Sign out
-        </Button>
+        {/* Profile dropdown (avatar + email + Sign out) — top-right */}
+        <ProfileMenu session={session} />
       </header>
 
       {/* ── Sidebar — left column, rendered on every page ── */}
@@ -65,12 +62,12 @@ function DashboardShell() {
 // Dashboard — the root component rendered by main.jsx when session exists.
 // BrowserRouter lives here so it is completely self-contained within the
 // dashboard and does not affect the auth flow in main.jsx.
-export default function Dashboard() {
+export default function Dashboard({ session }) {
   return (
     <BrowserRouter>
       <Routes>
         {/* DashboardShell provides the header + sidebar frame for all pages */}
-        <Route element={<DashboardShell />}>
+        <Route element={<DashboardShell session={session} />}>
           <Route index element={<MainPage />} />
           <Route path="learners" element={<LearnersPage />} />
           <Route path="learners/:id" element={<LearnerDetailPage />} />

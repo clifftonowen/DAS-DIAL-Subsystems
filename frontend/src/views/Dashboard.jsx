@@ -16,10 +16,10 @@
 //     └── <main>   <Outlet />      — right column, scrollable
 
 import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
-import { supabase } from "../lib/supabase";
-import Brand from "../components/Brand";
 import Button from "../components/Button";
 import DashboardSidebar from "../components/DashboardSidebar";
+import Navbar from "../components/Navbar";
+import UploadView from "./UploadView";
 
 // --- DASHBOARD PROTOTYPE ADDITIONS ---
 // Page components — one per route

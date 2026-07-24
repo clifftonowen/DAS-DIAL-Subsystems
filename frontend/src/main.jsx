@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { supabase } from "./lib/supabase";
 import AuthView from "./views/AuthView";
@@ -12,7 +12,7 @@ function App() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
-  return session ? <Dashboard /> : <AuthView />;
+  return session ? <Dashboard session={session} /> : <AuthView />;
 }
 
 createRoot(document.getElementById("root")).render(<App />);

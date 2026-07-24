@@ -7,8 +7,8 @@ class Settings(BaseSettings):
 
     # Supabase
     supabase_url: str = ""
-    supabase_key: str = ""          # service-role key, backend only
-    supabase_jwt_secret: str = ""   # used to verify auth tokens
+    supabase_key: str = ""
+    supabase_jwt_secret: str = ""
 
     # LLM
     openai_api_key: str = ""

@@ -13,6 +13,5 @@ frontend/.vite/
 # os
 .DS_Store
 
-CLAUDE.md
 IMPLEMENTATION_PLAN.md
 DEMO_PLAN.md

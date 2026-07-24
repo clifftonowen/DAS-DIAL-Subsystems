@@ -1,3 +1,5 @@
+from app.repositories.base import BaseRepository
+
 class LearnerRepository(BaseRepository):
     table = "learners"
 

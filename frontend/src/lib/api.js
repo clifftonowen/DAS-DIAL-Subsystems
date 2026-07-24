@@ -19,3 +19,21 @@ export const listLearners = () => api("/learners");
 export const generateProfile = (learnerId) => api(`/profiles/${learnerId}`, { method: "POST" });
 export const generateActivity = (profileId, params) =>
   api(`/activities/${profileId}/generate`, { method: "POST", body: JSON.stringify(params) });
+
+async function apiForm(path, formData) {
+  const headers = await authHeader();
+  const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: formData });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `${res.status} ${res.statusText}`);
+  return data;
+}
+
+export function previewAssessment(learnerId, file) {
+  const form = new FormData();
+  form.append("learner_id", learnerId);
+  form.append("file", file);
+  return apiForm("/assessments/preview", form);
+}
+
+export const confirmAssessment = (payload) =>
+  api("/assessments/confirm", { method: "POST", body: JSON.stringify(payload) });

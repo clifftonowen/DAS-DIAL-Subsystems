@@ -13,4 +13,4 @@ langchain-openai==0.2.0
 httpx==0.27.2
 PyMuPDF==1.24.10          # curriculum PDF ingestion (Subsystem 3) — fitz positional extraction
 pytest==8.3.3
-
+python-docx

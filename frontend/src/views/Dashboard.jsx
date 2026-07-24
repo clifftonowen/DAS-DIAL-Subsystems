@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import Brand from "../components/Brand";
 import Button from "../components/Button";
 import Card from "../components/Card";
+import UploadView from "./UploadView";
 
 function LearnerCardSkeleton() {
   return (
@@ -24,6 +25,7 @@ export default function Dashboard() {
   const [learners, setLearners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [showUpload, setShowUpload] = useState(false);
 
   useEffect(() => {
     listLearners()
@@ -35,8 +37,10 @@ export default function Dashboard() {
   return (
     <div className="min-h-dvh bg-brand-bg">
       <header className="sticky top-0 z-10 border-b border-brand-border bg-white/90 backdrop-blur px-6 py-4">
-        <div className="mx-auto flex max-w-4xl items-center justify-between">
-          <Brand />
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => setShowUpload(true)}>
+            Upload Assessment Data
+          </Button>
           <Button variant="ghost" onClick={() => supabase.auth.signOut()}>
             Sign out
           </Button>
@@ -103,6 +107,16 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+      {showUpload && (
+        <UploadView
+          learners={learners}
+          onClose={() => setShowUpload(false)}
+          onSaved={() => {
+            setShowUpload(false);
+            listLearners().then(setLearners).catch((e) => setErr(e.message));
+          }}
+        />
+      )}
     </div>
   );
 }

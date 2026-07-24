@@ -68,8 +68,11 @@ jobs:
       - run: npm test
 
   # ---------------------------------------------------------------------- e2e
+  # Gated on BOTH backend levels so the job graph mirrors the pyramid
+  # (unit + integration -> e2e -> system): don't spend the secret-backed e2e run
+  # until the cheap, hermetic backend tiers pass.
   e2e:
-    needs: [backend-unit]
+    needs: [backend-unit, backend-integration]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -151,3 +154,10 @@ jobs:
           name: system-screenshots
           path: test-artifacts/
           if-no-files-found: ignore
+
+  # ------------------------------------------------------- frontend-e2e (future)
+  # Placeholder — a Playwright browser-e2e stack is scaffolded in frontend/e2e/
+  # but not installed yet. When adopted, add a `frontend-e2e` job here mirroring
+  # `system`: setup-node, `npm ci`, `npx playwright install --with-deps`, start
+  # backend + `npm run preview`, `npm run test:e2e`, and upload the Playwright
+  # report on failure. See frontend/e2e/README.md.

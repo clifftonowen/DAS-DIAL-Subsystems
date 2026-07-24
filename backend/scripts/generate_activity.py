@@ -23,6 +23,17 @@ def _grounding_header(chunks: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _model_refused(text: str | None) -> bool:
+    """True if the model self-refused with an INSUFFICIENT_CONTEXT signal on its first line.
+    Tolerant of spacing/case/punctuation — models write 'INSUFFICIENT CONTEXT', bold it, or
+    lowercase it, and almost never emit the exact underscore sentinel."""
+    if not text or not text.strip():
+        return False
+    first_line = text.strip().splitlines()[0]
+    norm = "".join(ch for ch in first_line.lower() if ch.isalnum())  # drop spaces/_/markdown
+    return norm.startswith("insufficientcontext")
+
+
 def cmd_generate(args: argparse.Namespace) -> int:
     # lazy: these need the embedding gateway + Supabase + the LLM
     from app.services.curriculum_retrieval_service import CurriculumRetrievalService
@@ -38,12 +49,16 @@ def cmd_generate(args: argparse.Namespace) -> int:
           + (f'  filters={filters}' if filters else '') + ' ===\n')
 
     chunks = CurriculumRetrievalService().retrieve(
-        args.query, band=args.band, concept=args.concept, stage=args.stage, k=args.k
+        args.query, band=args.band, concept=args.concept, stage=args.stage,
+        k=args.k, vector_only=args.vector_only,
     )
 
     # Guardrail: refuse before spending an LLM call when grounding is missing or weak.
-    top_sim = chunks[0].get("similarity") if chunks else None
-    if not chunks or not isinstance(top_sim, (int, float)) or top_sim < args.min_sim:
+    # Hybrid orders by RRF score, so the top row isn't necessarily the most semantically similar
+    # one — gate on the best semantic similarity across returned rows (keyword-only rows are None).
+    sims = [c["similarity"] for c in chunks if isinstance(c.get("similarity"), (int, float))]
+    top_sim = max(sims) if sims else None
+    if not chunks or top_sim is None or top_sim < args.min_sim:
         best = f"{top_sim:.3f}" if isinstance(top_sim, (int, float)) else "none"
         print(f"{INSUFFICIENT_CONTEXT}\n  query/filters not covered by the corpus "
               f"(best similarity: {best}, gate: {args.min_sim}).\n"
@@ -53,12 +68,22 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
     print(_grounding_header(chunks) + "\n")
     prompt = build_activity_prompt(chunks, params)
-    activity = LLMApiClient().complete(prompt, system=SYSTEM_PROMPT)
+    activity = LLMApiClient().complete(
+        prompt, system=SYSTEM_PROMPT, temperature=args.temperature, seed=args.seed,
+    )
+
+    # Second guardrail layer: the model may self-refuse past the similarity gate (e.g. an
+    # off-topic request whose generic tokens sneak over the threshold). Detect it tolerantly —
+    # models write "INSUFFICIENT CONTEXT", "insufficient_context", "**INSUFFICIENT_CONTEXT**",
+    # etc., rarely the exact sentinel — and surface it as a refusal, not an activity.
+    if _model_refused(activity):
+        print("INSUFFICIENT_CONTEXT  (model refused — grounding does not cover the request)\n")
+        print((activity or "").strip())
+        return 2
 
     print("--- ACTIVITY ---")
     print(activity.strip() if activity else "(empty response from LLM)")
-    # The model may still self-refuse even past the similarity gate.
-    return 2 if activity and activity.lstrip().startswith(INSUFFICIENT_CONTEXT) else 0
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -71,6 +96,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--k", type=int, default=3, help="chunks to retrieve for grounding (default 3)")
     p.add_argument("--min-sim", type=float, default=None,
                    help="min top-chunk similarity to proceed (default: prompts.MIN_SIMILARITY)")
+    p.add_argument("--vector-only", action="store_true",
+                   help="pure vector retrieval (default is hybrid: vector + full-text, RRF)")
+    p.add_argument("--temperature", type=float, default=None,
+                   help="sampling temperature; 0 = reproducible (default: OLLAMA_TEMPERATURE / .env)")
+    p.add_argument("--seed", type=int, default=None,
+                   help="sampling seed; fixed = reproducible at temp 0 (default: OLLAMA_SEED / .env)")
     p.set_defaults(func=cmd_generate)
     return p
 

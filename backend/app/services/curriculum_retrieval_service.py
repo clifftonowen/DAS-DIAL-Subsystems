@@ -19,11 +19,18 @@ class CurriculumRetrievalService:
         concept: str | None = None,
         stage: str | None = None,
         k: int = 3,
+        vector_only: bool = False,
     ) -> list[dict]:
+        """Retrieve grounding chunks. Hybrid (vector + full-text, RRF) by default; pass
+        vector_only=True for pure semantic ranking (A/B comparison / fallback)."""
         vector = self.llm.embed(query)  # 768-dim, active Ollama provider
         try:
-            return self.repo.match_curriculum(
-                vector, band=band, concept=concept, stage=stage, match_count=k
+            if vector_only:
+                return self.repo.match_curriculum(
+                    vector, band=band, concept=concept, stage=stage, match_count=k
+                )
+            return self.repo.hybrid_match_curriculum(
+                vector, query, band=band, concept=concept, stage=stage, match_count=k
             )
         except Exception:
             return []  # empty corpus / filter miss / Supabase unreachable during dev

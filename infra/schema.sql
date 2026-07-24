@@ -121,11 +121,18 @@ create table if not exists curriculum_chunks (
   embed_text text,                         -- optional: "why did this match?"
 
   -- reserved for v2 (create, leave empty)
-  skills text[] not null default '{}'
+  skills text[] not null default '{}',
+
+  -- full-text search (hybrid retrieval keyword side); generated + stored, filled by Postgres
+  fts tsvector generated always as (
+    to_tsvector('english', coalesce(activity_title, '') || ' ' || coalesce(content_md, ''))
+  ) stored
 );
 
 create index if not exists idx_curriculum_embedding
   on curriculum_chunks using hnsw (embedding vector_cosine_ops);
+create index if not exists idx_curriculum_fts
+  on curriculum_chunks using gin (fts);
 create index if not exists idx_curriculum_filter
   on curriculum_chunks (band, module, concept, stage);
 create index if not exists idx_curriculum_traits
@@ -158,5 +165,67 @@ language sql stable as $$
     and (filter_concept is null or c.concept = filter_concept)
     and (filter_stage   is null or c.stage   = filter_stage)
   order by c.embedding <=> query_embedding
+  limit match_count;
+$$;
+
+-- Hybrid retrieval: vector (semantic) + full-text (keyword), fused by Reciprocal Rank Fusion.
+-- RRF is scale-free (ranks, not raw scores), so cosine similarity and ts_rank need no normalising.
+-- Empty query_text or no keyword hit => keyword CTE is empty => graceful fall back to pure vector.
+-- Returns match_curriculum's columns plus `score` (the fused RRF score used for ordering).
+create or replace function hybrid_match_curriculum(
+  query_embedding vector(768),
+  query_text text,
+  filter_band text default null,
+  filter_concept text default null,
+  filter_stage text default null,
+  match_count int default 3,
+  rrf_k int default 50,               -- RRF smoothing constant (larger => flatter rank weighting)
+  full_text_weight float default 1.0,
+  semantic_weight float default 1.0,
+  candidate_pool int default 50       -- rows each side contributes before fusion
+)
+returns table (
+  id uuid, activity_title text, content_md text, answer_key text,
+  concept text, stage text, source_file text, page_start text,
+  similarity float, score float
+)
+language sql stable as $$
+  with filtered as (
+    select * from curriculum_chunks c
+    where c.doc_type = 'lesson_plan'
+      and (filter_band    is null or c.band    = filter_band)
+      and (filter_concept is null or c.concept = filter_concept)
+      and (filter_stage   is null or c.stage   = filter_stage)
+  ),
+  semantic as (
+    select f.id,
+           row_number() over (order by f.embedding <=> query_embedding) as rank,
+           1 - (f.embedding <=> query_embedding) as similarity
+    from filtered f
+    where f.embedding is not null
+    order by f.embedding <=> query_embedding
+    limit candidate_pool
+  ),
+  keyword as (
+    select f.id,
+           row_number() over (
+             order by ts_rank_cd(f.fts, websearch_to_tsquery('english', query_text)) desc
+           ) as rank
+    from filtered f
+    where query_text is not null and query_text <> ''
+      and f.fts @@ websearch_to_tsquery('english', query_text)
+    order by ts_rank_cd(f.fts, websearch_to_tsquery('english', query_text)) desc
+    limit candidate_pool
+  )
+  select f.id, f.activity_title, f.content_md, f.answer_key,
+         f.concept, f.stage, f.source_file, f.page_start,
+         s.similarity,
+         coalesce(semantic_weight  / (rrf_k + s.rank), 0.0)
+       + coalesce(full_text_weight / (rrf_k + k.rank), 0.0) as score
+  from filtered f
+  left join semantic s on s.id = f.id
+  left join keyword  k on k.id = f.id
+  where s.id is not null or k.id is not null
+  order by score desc
   limit match_count;
 $$;

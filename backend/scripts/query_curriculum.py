@@ -30,10 +30,12 @@ def format_results(results: list[dict], full: bool) -> str:
         concept = r.get("concept") or "-"
         stage = r.get("stage") or "-"
         sim = r.get("similarity")
-        sim_s = f"{sim:.3f}" if isinstance(sim, (int, float)) else "?"
+        sim_s = f"{sim:.3f}" if isinstance(sim, (int, float)) else "-"
+        score = r.get("score")  # present only for hybrid results (RRF fused score)
+        score_s = f"  score={score:.4f}" if isinstance(score, (int, float)) else ""
         page = r.get("page_start") or "?"
         src = r.get("source_file") or "?"
-        lines.append(f"{i}. {title}  ({concept} / {stage})  sim={sim_s}")
+        lines.append(f"{i}. {title}  ({concept} / {stage})  sim={sim_s}{score_s}")
         lines.append(f"   {src} p.{page}")
         body = r.get("content_md") if full else _snippet(r.get("content_md"))
         lines.append(f"   {body}" if not full else textwrap.indent(body or "-", "   "))
@@ -50,10 +52,12 @@ def cmd_query(args: argparse.Namespace) -> int:
     filters = {k: v for k, v in
                (("band", args.band), ("concept", args.concept), ("stage", args.stage)) if v}
     filt_s = f"  filters={filters}" if filters else ""
-    print(f'=== query: "{args.query}"  k={args.k}{filt_s} ===\n')
+    mode = "vector-only" if args.vector_only else "hybrid"
+    print(f'=== query: "{args.query}"  k={args.k}  [{mode}]{filt_s} ===\n')
 
     results = CurriculumRetrievalService().retrieve(
-        args.query, band=args.band, concept=args.concept, stage=args.stage, k=args.k
+        args.query, band=args.band, concept=args.concept, stage=args.stage,
+        k=args.k, vector_only=args.vector_only,
     )
     print(format_results(results, full=args.full))
     return 0
@@ -68,6 +72,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--stage", help="filter: 'presentation' | 'practice' | 'production' | ...")
     p.add_argument("--k", type=int, default=3, help="number of chunks to return (default 3)")
     p.add_argument("--full", action="store_true", help="print full content_md, not a snippet")
+    p.add_argument("--vector-only", action="store_true",
+                   help="pure vector search (default is hybrid: vector + full-text, RRF)")
     p.set_defaults(func=cmd_query)
     return p
 

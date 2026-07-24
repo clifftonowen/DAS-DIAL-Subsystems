@@ -9,7 +9,9 @@ is the retrieval gate the caller uses to short-circuit before ever reaching the 
 from __future__ import annotations
 
 INSUFFICIENT_CONTEXT = "INSUFFICIENT_CONTEXT"  # sentinel the model must emit when grounding is thin
-MIN_SIMILARITY = 0.35  # top-chunk cosine similarity below this => refuse without calling the LLM
+MIN_SIMILARITY = 0.50  # top-chunk cosine similarity below this => refuse without calling the LLM.
+# Tuned to nomic-embed-text's narrow score band: out-of-domain queries land ~0.42, real matches
+# 0.58+. 0.50 sits in the gap so junk is refused and genuine requests pass.
 
 SYSTEM_PROMPT = f"""You are a curriculum designer for the DAS D.I.A.L literacy programme.
 

@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routers import (auth, learners, profiles, activities,
-                         assessments, reviews, share)
+                         assessments, reviews, share, dashboard)
 
 app = FastAPI(title=settings.app_name)
 
@@ -15,7 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (auth, learners, profiles, activities, assessments, reviews, share):
+for r in (auth, learners, profiles, activities, assessments, reviews, share, dashboard):
     app.include_router(r.router)
 
 

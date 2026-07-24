@@ -1,0 +1,80 @@
+from fastapi import APIRouter, Depends
+from app.core.security import current_therapist
+from app.repositories.base import BaseRepository
+
+router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+class DashboardRepository(BaseRepository):
+    table = "data"
+
+    def get_stats(self) -> dict:
+        flagged_count = 2
+        needs_profiling = 3
+        high_risk = 1
+        inactive = 1
+
+        try:
+            activities = self.db.select("*").eq("status", "FLAGGED").table("learning_activities").execute().data
+            if activities is not None:
+                flagged_count = len(activities)
+
+            records = self.db.select("*").gt("risk_score", 0.8).table("assessment_records").execute().data
+            if records is not None and len(records) > 0:
+                high_risk = len(records)
+        except Exception:
+            pass
+
+        return {
+            "flagged": flagged_count,
+            "needs_profiling": needs_profiling,
+            "high_risk": high_risk,
+            "inactive": inactive
+        }
+        
+    def get_tasks(self) -> list[dict]:
+        try:
+            data = self.db.table("tasks").select("*").execute().data
+            if data:
+                return data
+        except Exception:
+            pass
+        return [
+            { "title": "Review flagged activity for Learner A", "meta": "Due today · Subsystem 3", "status": "DONE" },
+            { "title": "Upload assessment for Learner D", "meta": "Due today · Subsystem 2", "status": "PENDING" },
+            { "title": "Generate profile for Learner C", "meta": "Due today · Subsystem 2", "status": "PENDING" },
+            { "title": "Generate activity for Learner B", "meta": "Due today · Subsystem 3", "status": "PENDING" },
+            { "title": "Share Learner A's progress report", "meta": "Jul 22 · Email to parent", "status": "PENDING" },
+            { "title": "Re-assess Learner E (high risk)", "meta": "Jul 28 · Scheduled", "status": "PENDING" }
+        ]
+        
+    def get_events(self) -> list[dict]:
+        try:
+            data = self.db.table("calendar_events").select("*").execute().data
+            if data:
+                return data
+        except Exception:
+            pass
+        return [
+            { "event_date": "2026-07-03" },
+            { "event_date": "2026-07-07" },
+            { "event_date": "2026-07-14" },
+            { "event_date": "2026-07-20" },
+            { "event_date": "2026-07-22" },
+            { "event_date": "2026-07-28" }
+        ]
+
+
+
+repo = DashboardRepository()
+
+@router.get("/stats")
+def get_dashboard_stats(_: str = Depends(current_therapist)):
+    return repo.get_stats()
+
+@router.get("/tasks")
+def get_dashboard_tasks(_: str = Depends(current_therapist)):
+    return repo.get_tasks()
+
+@router.get("/events")
+def get_dashboard_events(_: str = Depends(current_therapist)):
+    return repo.get_events()

@@ -30,3 +30,6 @@ class ActivityGenerationService:
         activity["profiled"] = profile_id
         self.activities.save(activity)
         return activity
+
+    def list_activities(self, profile_id: str) -> list[dict]:
+        return self.activities.find_by_profile(profile_id)

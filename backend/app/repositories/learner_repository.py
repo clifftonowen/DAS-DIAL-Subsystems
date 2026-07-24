@@ -1,6 +1,3 @@
-from app.repositories.base import BaseRepository
-
-
 class LearnerRepository(BaseRepository):
     table = "learners"
 
@@ -13,3 +10,5 @@ class LearnerRepository(BaseRepository):
 
     def list_all(self) -> list[dict]:
         return self.db.select("*").execute().data
+
+

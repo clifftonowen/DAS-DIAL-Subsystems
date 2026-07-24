@@ -70,6 +70,21 @@ create table if not exists reviews (
   created_at timestamptz default now()
 );
 
+create table if not exists tasks (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  meta text default '',
+  status text default 'PENDING',
+  created_at timestamptz default now()
+);
+
+create table if not exists calendar_events (
+  id uuid primary key default gen_random_uuid(),
+  event_date date not null,
+  description text default '',
+  created_at timestamptz default now()
+);
+
 -- Similarity search used by KnowledgeBaseRepository.similarity_search()
 create or replace function match_strategies(query_embedding vector(1536), match_count int)
 returns table (id uuid, content text, source text, tags text[], similarity float)

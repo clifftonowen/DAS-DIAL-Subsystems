@@ -1,108 +1,82 @@
-import { useEffect, useState } from "react";
-import { listLearners } from "../lib/api";
+// Dashboard.jsx — Layout shell for the authenticated dashboard.
+//
+// Owns the BrowserRouter so React Router (NavLink, useNavigate, useParams)
+// works within the dashboard without touching main.jsx or the auth flow.
+//
+// Route tree:
+//   /                → MainPage          (stat cards, calendar, tasks)
+//   /learners        → LearnersPage      (searchable student grid)
+//   /learners/:id    → LearnerDetailPage (radar chart, skill bars, alerts)
+//   /generate        → GeneratePage      (autocomplete + generate activity)
+//
+// Shell layout (matches prototype .shell div):
+//   .shell-grid (index.css: 220px sidebar | 1fr content, 100dvh)
+//     ├── <header>  .shell-header  — spans both columns
+//     ├── <DashboardSidebar />     — left column
+//     └── <main>   <Outlet />      — right column, scrollable
+
+import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import Brand from "../components/Brand";
 import Button from "../components/Button";
-import Card from "../components/Card";
+import DashboardSidebar from "../components/DashboardSidebar";
 
-function LearnerCardSkeleton() {
+// --- DASHBOARD PROTOTYPE ADDITIONS ---
+// Page components — one per route
+import MainPage from "./MainPage";
+import LearnersPage from "./LearnersPage";
+import LearnerDetailPage from "./LearnerDetailPage";
+import GeneratePage from "./GeneratePage";
+// --- END DASHBOARD PROTOTYPE ADDITIONS ---
+
+// Inner shell — the actual header + sidebar + outlet layout.
+// Separated from Dashboard so BrowserRouter wraps it correctly.
+function DashboardShell() {
   return (
-    <Card className="flex animate-pulse items-center justify-between">
-      <div className="space-y-2">
-        <div className="h-4 w-32 rounded bg-brand-muted" />
-        <div className="h-3 w-20 rounded bg-brand-muted" />
-      </div>
-      <div className="flex gap-2">
-        <div className="h-9 w-24 rounded-lg bg-brand-muted" />
-        <div className="h-9 w-32 rounded-lg bg-brand-muted" />
-      </div>
-    </Card>
+    // .shell-grid defined in index.css:
+    //   grid-template-columns: 220px 1fr
+    //   grid-template-rows: auto 1fr
+    //   height: 100dvh
+    <div className="shell-grid">
+
+      {/* ── Header — spans both columns via .shell-header (index.css) ── */}
+      <header className="shell-header flex items-center justify-between
+                         border-b border-brand-border bg-white px-6 py-3
+                         sticky top-0 z-10">
+        <Brand />
+        {/* Sign out delegates directly to Supabase auth — no router needed */}
+        <Button variant="ghost" onClick={() => supabase.auth.signOut()}>
+          Sign out
+        </Button>
+      </header>
+
+      {/* ── Sidebar — left column, rendered on every page ── */}
+      <DashboardSidebar />
+
+      {/* ── Content area — React Router injects the active page here ── */}
+      <main className="overflow-y-auto p-6">
+        <Outlet />
+      </main>
+
+    </div>
   );
 }
 
+// Dashboard — the root component rendered by main.jsx when session exists.
+// BrowserRouter lives here so it is completely self-contained within the
+// dashboard and does not affect the auth flow in main.jsx.
 export default function Dashboard() {
-  const [learners, setLearners] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-
-  useEffect(() => {
-    listLearners()
-      .then(setLearners)
-      .catch((e) => setErr(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
   return (
-    <div className="min-h-dvh bg-brand-bg">
-      <header className="sticky top-0 z-10 border-b border-brand-border bg-white/90 backdrop-blur px-6 py-4">
-        <div className="mx-auto flex max-w-4xl items-center justify-between">
-          <Brand />
-          <Button variant="ghost" onClick={() => supabase.auth.signOut()}>
-            Sign out
-          </Button>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-4xl space-y-6 p-6">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-brand-fg">Learners</h1>
-          <p className="text-sm text-brand-fg-muted">
-            {loading ? "Loading…" : `${learners.length} learner${learners.length === 1 ? "" : "s"}`}
-          </p>
-        </div>
-
-        {err && (
-          <Card role="alert" className="border-brand-destructive/40 bg-brand-bg text-brand-destructive">
-            {err}
-          </Card>
-        )}
-
-        {loading && (
-          <div className="grid gap-3">
-            <LearnerCardSkeleton />
-            <LearnerCardSkeleton />
-            <LearnerCardSkeleton />
-          </div>
-        )}
-
-        {!loading && !err && learners.length === 0 && (
-          <Card className="text-center text-brand-fg-muted">
-            No learners yet. Seed the DB or upload assessments.
-          </Card>
-        )}
-
-        {!loading && learners.length > 0 && (
-          <div className="grid gap-3">
-            {learners.map((l) => (
-              <Card key={l.id} className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-brand-fg">{l.pseudonym}</p>
-                  <span className="inline-block rounded-full bg-brand-muted px-2 py-0.5 text-xs font-medium text-brand-fg-muted">
-                    {l.band_level}
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-medium text-brand-fg-muted">Coming soon</span>
-                  <Button
-                    variant="secondary"
-                    disabled
-                    title="Generate Profile — Subsystem 2, next iteration"
-                  >
-                    Generate Profile
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled
-                    title="Generate Activity — Subsystem 3, next iteration"
-                  >
-                    Generate Activity
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-      </main>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        {/* DashboardShell provides the header + sidebar frame for all pages */}
+        <Route element={<DashboardShell />}>
+          <Route index element={<MainPage />} />
+          <Route path="learners" element={<LearnersPage />} />
+          <Route path="learners/:id" element={<LearnerDetailPage />} />
+          <Route path="generate" element={<GeneratePage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }

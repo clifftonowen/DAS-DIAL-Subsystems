@@ -13,3 +13,5 @@ def get_supabase():
         raise RuntimeError("SUPABASE_URL not set. Copy .env.example to .env.")
     from supabase import create_client
     return create_client(settings.supabase_url, settings.supabase_key)
+
+

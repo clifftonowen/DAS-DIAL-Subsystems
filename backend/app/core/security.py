@@ -25,3 +25,5 @@ async def current_therapist(cred: HTTPAuthorizationCredentials = Depends(bearer)
     if not result or not result.user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
     return result.user.id  # Supabase auth user id
+
+

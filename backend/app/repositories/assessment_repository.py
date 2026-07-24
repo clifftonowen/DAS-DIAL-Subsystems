@@ -8,4 +8,4 @@ class AssessmentRepository(BaseRepository):
         return self.db.upsert(record).execute().data
 
     def find_by_learner(self, learner_id: str) -> list[dict]:
-        return self.db.select("*").eq("learner_id", learner_id).execute().data
+        return self.db.select("*").eq("learner_id", learner_id).order("assessment_date", desc=True).execute().data

@@ -20,3 +20,6 @@ class ProfilingService:
         profile = {"learner_id": learner_id, **metrics}
         self.profiles.save(profile)
         return profile
+
+    def list_profiles(self, learner_id: str) -> list[dict]:
+        return self.profiles.list_by_learner(learner_id)

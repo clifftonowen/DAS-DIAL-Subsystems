@@ -10,3 +10,6 @@ class LearnerProfileRepository(BaseRepository):
     def find_by_learner(self, learner_id: str) -> dict | None:
         rows = self.db.select("*").eq("learner_id", learner_id).execute().data
         return rows[0] if rows else None
+
+    def list_by_learner(self, learner_id: str) -> list[dict]:
+        return self.db.select("*").eq("learner_id", learner_id).order("created_at", desc=True).execute().data

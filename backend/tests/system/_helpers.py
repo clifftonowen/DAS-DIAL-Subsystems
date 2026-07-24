@@ -20,6 +20,8 @@ def login(driver, base_url, email, password, timeout=20):
     ).click()
 
     # Dashboard shell renders the profile menu once the session is established.
+    # The trigger is a <button> that also holds the avatar initial, so its full
+    # text is e.g. "O My Profile" — match with contains(), not exact equality.
     wait.until(EC.presence_of_element_located(
-        (By.XPATH, "//*[normalize-space()='My Profile']")
+        (By.XPATH, "//button[contains(., 'My Profile')]")
     ))

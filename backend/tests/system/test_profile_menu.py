@@ -22,7 +22,8 @@ def test_profile_dropdown_shows_email_and_signs_out(system_creds, driver, fronte
     wait = WebDriverWait(driver, 15)
 
     # Open the dropdown and confirm it reveals the signed-in email.
-    driver.find_element(By.XPATH, "//*[normalize-space()='My Profile']").click()
+    # (button text is "<initial> My Profile" — match with contains, not equality)
+    driver.find_element(By.XPATH, "//button[contains(., 'My Profile')]").click()
     wait.until(EC.presence_of_element_located(
         (By.XPATH, f"//*[contains(text(), '{email}')]")
     ))

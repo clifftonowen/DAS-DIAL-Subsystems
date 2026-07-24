@@ -32,18 +32,6 @@ export const getDashboardTasks = () => api("/dashboard/tasks");
 export const getDashboardEvents = () => api("/dashboard/events");
 
 
-// New GET endpoints added per implementation plan
-export const getLearner = (learnerId) => api(`/learners/${learnerId}`);
-export const getLearnerProfiles = (learnerId) => api(`/learners/${learnerId}/profiles`);
-export const getLearnerAssessments = (learnerId) => api(`/learners/${learnerId}/assessments`);
-export const getProfileActivities = (profileId) => api(`/profiles/${profileId}/activities`);
-
-// Dashboard endpoints
-export const getDashboardStats = () => api("/dashboard/stats");
-export const getDashboardTasks = () => api("/dashboard/tasks");
-export const getDashboardEvents = () => api("/dashboard/events");
-
-
 async function apiForm(path, formData) {
   const headers = await authHeader();
   const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: formData });

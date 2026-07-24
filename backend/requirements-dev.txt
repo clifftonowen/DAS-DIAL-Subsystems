@@ -1,0 +1,8 @@
+# Test / CI dependencies (install on top of requirements.txt)
+#   pip install -r requirements.txt -r requirements-dev.txt
+pytest==8.3.3            # test runner (also in requirements.txt; pinned here for CI-only installs)
+pytest-cov==5.0.0        # coverage reporting (unit/integration)
+pytest-mock==3.14.0      # `mocker` fixture — thin wrapper over unittest.mock
+httpx==0.27.2            # TestClient transport (also a runtime dep; listed for clarity)
+selenium==4.25.0         # system tests — drives a real browser
+webdriver-manager==4.0.2 # auto-downloads the matching ChromeDriver for Selenium

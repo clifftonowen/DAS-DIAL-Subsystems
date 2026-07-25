@@ -97,10 +97,16 @@ export default function MainPage() {
       </div>
 
       {/* ── Calendar (left) + task panel (right) ── */}
-      <div className="main-layout flex-1">
-        <Calendar events={events} />
+      {/* .main-layout sets its own fixed height — no flex-1, so it does not
+          stretch to the viewport */}
+      <div className="main-layout">
+        {/* Calendar — capped width so the square day cells stay a sensible size */}
+        <div className="w-full max-w-[460px]">
+          <Calendar events={events} />
+        </div>
 
-        <div className="flex flex-col gap-4 overflow-y-auto">
+        {/* Task panel — takes the remaining width */}
+        <div className="flex min-w-[320px] flex-1 flex-col gap-4 overflow-y-auto">
           <TaskList title="Today's Tasks" tasks={tasks.today} />
           <TaskList title="Upcoming"      tasks={tasks.upcoming} />
         </div>

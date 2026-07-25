@@ -41,17 +41,24 @@
   /* Header spans both columns so it sits above sidebar + content */
   .shell-header { grid-column: 1 / -1; }
 
-  /* Main page two-column layout: calendar (1fr) | task panel (320px)
+  /* Main page two-column layout: calendar | task panel
      Used by MainPage.jsx — a flex-1 row inside that page's vertical stack, so it
      fills whatever height the hero + alerts row leave over.
-     min-height: 0 lets the task panel's own overflow-y-auto take effect.
-     Column width + gap per DashPreview.dc.html. */
+
+     Flex row rather than a grid: align-items stretch makes both columns exactly
+     the row's height. space-between pins them to the outer edges. Each child sets
+     its own width in MainPage.jsx.
+
+     Fixed 420px rather than filling the viewport — that is what the calendar needs
+     at its largest (36 padding + 28 header + 14 + 23 day headers + 4 + 298 for six
+     48px week rows ≈ 403), so neither column can grow to dominate the page. The
+     task panel scrolls inside it. Gap per DashPreview.dc.html. */
   .main-layout {
-    display: grid;
-    grid-template-columns: 1fr 320px;
-    grid-template-rows: 1fr;
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
     gap: 18px;
-    min-height: 0;
+    height: 420px;
   }
 
   /* 7-column calendar day grid
@@ -61,7 +68,9 @@
     grid-template-columns: repeat(7, 1fr);
     gap: 2px;
   }
-  .cal-day { aspect-ratio: 1; min-height: 36px; }
+  /* Square cells, but clamped: max-height stops a wide column from stretching
+     the month grid vertically — past 48px the cells just look empty. */
+  .cal-day { aspect-ratio: 1; min-height: 32px; max-height: 48px; }
 
   /* Animated fill for skill progress bars (width set inline via style prop)
      Used by SkillBars.jsx */

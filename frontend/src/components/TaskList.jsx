@@ -27,8 +27,11 @@ export default function TaskList({ title, tasks = [] }) {
       {/* ── Section title ── */}
       <p className="mb-3 text-sm font-semibold text-brand-fg">{title}</p>
 
-      {/* ── Task items ── */}
-      <div className="space-y-3">
+      {/* ── Task items ──
+          Capped at five rows, then scrolls: 5 × 36px (13px title + 11px meta)
+          + 4 × 12px space-y gap = 228px. A task whose text wraps is taller, so
+          a long one shows four and a bit — the cap is a height, not a count. */}
+      <div className="max-h-[228px] space-y-3 overflow-y-auto pr-1">
         {items.map((item, i) => (
           <div key={i} className="flex items-start gap-3">
             {/* ── Checkbox circle — toggles done state on click ── */}

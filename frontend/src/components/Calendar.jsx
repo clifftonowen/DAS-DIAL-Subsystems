@@ -57,6 +57,8 @@ export default function Calendar({ events = [] }) {
 
   // ── Render ────────────────────────────────────────────────────────
   return (
+    // h-full matches the task column beside it. The month grid itself stays at
+    // its natural size (see the day-cell grid below) — only the card stretches.
     <div className="flex h-full flex-col rounded-2xl border border-brand-border bg-white p-[18px] shadow-sm">
 
       {/* ── Header: title + nav buttons ── */}
@@ -91,7 +93,10 @@ export default function Calendar({ events = [] }) {
       </div>
 
       {/* ── Day cells ── */}
-      <div className="calendar-grid flex-1">
+      {/* flex-1 lets the grid take the card's leftover height, but content-start
+          packs the week rows at the top so the cells keep their 2px gap instead
+          of spreading out to fill it. */}
+      <div className="calendar-grid flex-1 content-start">
         {cells.map((day, idx) => {
           if (day === null) return <div key={`empty-${idx}`} />;
 
@@ -102,7 +107,7 @@ export default function Calendar({ events = [] }) {
           const hasEvent = eventDays.has(day);
 
           return (
-            // .cal-day defined in index.css: aspect-ratio:1, min-height:48px
+            // .cal-day defined in index.css: aspect-ratio:1, height clamped 32-48px
             <div
               key={day}
               className={[

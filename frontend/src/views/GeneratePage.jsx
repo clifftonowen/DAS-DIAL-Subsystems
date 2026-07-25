@@ -9,6 +9,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Button from "../components/Button";
+import ActivityContent from "../components/ActivityContent";
 import { listLearners, generateActivity } from "../lib/api";
 
 export default function GeneratePage() {
@@ -225,18 +226,18 @@ export default function GeneratePage() {
       {/* ── Generated activity + the curriculum it was grounded in ── */}
       {result?.status === "GENERATED" && (
         <div className="mt-4 space-y-4">
-          <div className="rounded-xl border border-brand-border bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
+          <div className="overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-brand-border bg-brand-muted/50 px-6 py-3">
               <p className="text-sm font-semibold text-brand-fg">Generated activity</p>
               <span className="rounded bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
                 Grounded in {result.grounding?.length ?? 0} source
                 {result.grounding?.length === 1 ? "" : "s"}
               </span>
             </div>
-            {/* whitespace-pre-wrap: the model returns plain text with its own line breaks */}
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-brand-fg">
-              {result.content}
-            </p>
+            {/* ActivityContent parses the model's Markdown — no raw ** on screen */}
+            <div className="px-6 py-5">
+              <ActivityContent text={result.content} />
+            </div>
           </div>
 
           {result.grounding?.length > 0 && (

@@ -49,6 +49,10 @@ export default {
       fontFamily: {
         display: ["Poppins", "system-ui", "sans-serif"],
         sans: ["Poppins", "system-ui", "sans-serif"],
+        // Long-form reading (generated activities). Poppins is a geometric display
+        // face — fine for labels, tiring for paragraphs a therapist reads end to
+        // end. System serifs only, so this costs no extra webfont request.
+        reading: ["Charter", "Georgia", "Cambria", "Times New Roman", "serif"],
       },
     },
   },

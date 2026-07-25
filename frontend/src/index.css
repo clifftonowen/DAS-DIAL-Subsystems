@@ -41,17 +41,18 @@
   /* Header spans both columns so it sits above sidebar + content */
   .shell-header { grid-column: 1 / -1; }
 
-  /* Main page two-column layout: calendar (1fr) | task panel (300px)
-     Used by MainPage.jsx */
+  /* Main page two-column layout: calendar (1fr) | task panel (320px)
+     Used by MainPage.jsx — a flex-1 row inside that page's vertical stack, so it
+     fills whatever height the hero + alerts row leave over.
+     min-height: 0 lets the task panel's own overflow-y-auto take effect.
+     Column width + gap per DashPreview.dc.html. */
   .main-layout {
     display: grid;
-    grid-template-columns: 1fr 300px;
-    grid-template-rows: auto 1fr;
-    gap: 20px;
-    height: 100%;
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: 1fr;
+    gap: 18px;
+    min-height: 0;
   }
-  /* Stat card alerts row spans both columns */
-  .main-alerts { grid-column: 1 / -1; }
 
   /* 7-column calendar day grid
      Used by Calendar.jsx */
@@ -60,7 +61,7 @@
     grid-template-columns: repeat(7, 1fr);
     gap: 2px;
   }
-  .cal-day { aspect-ratio: 1; min-height: 48px; }
+  .cal-day { aspect-ratio: 1; min-height: 36px; }
 
   /* Animated fill for skill progress bars (width set inline via style prop)
      Used by SkillBars.jsx */
@@ -68,8 +69,8 @@
 
   /* Left-border severity colours for deficiency alert cards
      Used by DeficiencyAlerts.jsx — applied based on score thresholds */
-  .deficiency-high   { border-left: 3px solid #E91626; } /* < 30% — Critical  */
-  .deficiency-medium { border-left: 3px solid #F8B508; } /* < 40% — Low       */
+  .deficiency-high   { border-left: 3px solid #FF2E45; } /* < 30% — Critical  */
+  .deficiency-medium { border-left: 3px solid #FFCA28; } /* < 40% — Low       */
   .deficiency-low    { border-left: 3px solid #2563EB; } /* < 50% — Below avg */
 
   /* Lift + red border on hover for student grid cards

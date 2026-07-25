@@ -1,20 +1,33 @@
 // MainPage.jsx — Default landing page rendered at route "/".
 //
-// Layout matches the prototype's .main-layout grid (defined in index.css):
-//   .main-alerts  — full-width row of 4 StatCards at the top
-//   left column   — Calendar
-//   right column  — TaskList (Today's Tasks + Upcoming)
+// Crisp Bright refresh (design direction 1d). Vertical stack:
+//   HeroBanner    — welcome banner
+//   alerts row    — StatCards, one per STAT_CARDS entry below
+//   .main-layout  — Calendar (left column) + TaskList stack (right column)
 //
-// All data is hardcoded to match the prototype exactly.
-// When real data is available, replace the static arrays with API calls.
+// All three sections read live data from /dashboard/* via lib/api.
 
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import HeroBanner from "../components/HeroBanner";
 import StatCard from "../components/StatCard";
 import Calendar from "../components/Calendar";
 import TaskList from "../components/TaskList";
 import { getDashboardStats, getDashboardTasks, getDashboardEvents } from "../lib/api";
 
+// Alerts row above the calendar — one entry per card, each driven by a key on the
+// /dashboard/stats response. Add a card by adding a row here; no new component needed.
+const STAT_CARDS = [
+  { key: "total_learners",  title: "Total Learners",
+    subtitle: (n) => `${n} learners enrolled` },
+  { key: "needs_profiling", title: "Missing Profiles",
+    subtitle: (n) => `${n} learners missing a profile` },
+  { key: "flagged",         title: "Pending Review",
+    subtitle: (n) => `${n} activities awaiting review` },
+];
+
 export default function MainPage() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [tasks, setTasks] = useState({ today: [], upcoming: [] });
   const [events, setEvents] = useState([]);
@@ -53,32 +66,7 @@ export default function MainPage() {
     loadDashboard();
   }, []);
 
-  const statCards = [
-    {
-      title: "Flagged Activities",
-      subtitle: `${stats?.flagged || 0} activities need your review`,
-      trailing: <span className="text-lg font-bold text-brand-fg">{stats?.flagged || 0}</span>,
-    },
-    {
-      title: "Needs Profiling",
-      subtitle: `${stats?.needs_profiling || 0} learners missing a profile`,
-      trailing: <span className="text-lg font-bold text-brand-fg">{stats?.needs_profiling || 0}</span>,
-    },
-    {
-      title: "High Risk",
-      subtitle: `${stats?.high_risk || 0} learners with high risk`,
-      trailing: (
-        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-          Urgent
-        </span>
-      ),
-    },
-    {
-      title: "Inactive Learners",
-      subtitle: `${stats?.inactive || 0} learner inactive 30+ days`,
-      trailing: <span className="text-lg font-bold text-brand-fg">{stats?.inactive || 0}</span>,
-    }
-  ];
+  const todayLabel = new Date().toLocaleDateString("en-SG", { day: "numeric", month: "long" });
 
   if (loading) {
     return (
@@ -89,21 +77,33 @@ export default function MainPage() {
   }
 
   return (
-    <div className="main-layout h-full">
-      {/* ── Alerts row ── */}
-      <div className="main-alerts grid grid-cols-2 gap-3 xl:grid-cols-4">
-        {statCards.map((card) => (
-          <StatCard key={card.title} {...card} />
-        ))}
+    <div className="flex h-full flex-col gap-[18px]">
+      {/* ── Welcome banner ── */}
+      <HeroBanner dateLabel={`Today, ${todayLabel}`} onStartReview={() => navigate("/learners")} />
+
+      {/* ── Alerts row — one StatCard per STAT_CARDS entry ── */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {STAT_CARDS.map(({ key, title, subtitle }) => {
+          const count = stats?.[key] ?? 0;
+          return (
+            <StatCard
+              key={key}
+              title={title}
+              subtitle={subtitle(count)}
+              trailing={<span className="text-lg font-extrabold text-brand-fg">{count}</span>}
+            />
+          );
+        })}
       </div>
 
-      {/* ── Calendar — left column ── */}
-      <Calendar events={events} />
+      {/* ── Calendar (left) + task panel (right) ── */}
+      <div className="main-layout flex-1">
+        <Calendar events={events} />
 
-      {/* ── Task panel — right column ── */}
-      <div className="flex flex-col gap-4 overflow-y-auto">
-        <TaskList title="Today's Tasks" tasks={tasks.today} />
-        <TaskList title="Upcoming"      tasks={tasks.upcoming} />
+        <div className="flex flex-col gap-4 overflow-y-auto">
+          <TaskList title="Today's Tasks" tasks={tasks.today} />
+          <TaskList title="Upcoming"      tasks={tasks.upcoming} />
+        </div>
       </div>
     </div>
   );

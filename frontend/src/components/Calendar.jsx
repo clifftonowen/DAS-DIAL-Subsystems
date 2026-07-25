@@ -57,10 +57,10 @@ export default function Calendar({ events = [] }) {
 
   // ── Render ────────────────────────────────────────────────────────
   return (
-    <div className="flex h-full flex-col rounded-xl border border-brand-border bg-white p-4 shadow-sm">
+    <div className="flex h-full flex-col rounded-2xl border border-brand-border bg-white p-[18px] shadow-sm">
 
       {/* ── Header: title + nav buttons ── */}
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3.5 flex items-center justify-between">
         <p className="text-sm font-semibold text-brand-fg">Calendar</p>
         <div className="flex items-center gap-2">
           <button
@@ -84,7 +84,7 @@ export default function Calendar({ events = [] }) {
       <div className="calendar-grid mb-1">
         {DAY_HEADERS.map(d => (
           <div key={d} className="py-1 text-center text-[10px] font-semibold
-                                  uppercase tracking-wide text-brand-fg-muted">
+                                  uppercase tracking-[0.06em] text-brand-fg-muted">
             {d}
           </div>
         ))}
@@ -106,7 +106,7 @@ export default function Calendar({ events = [] }) {
             <div
               key={day}
               className={[
-                "cal-day relative flex flex-col items-center justify-center rounded-lg",
+                "cal-day relative flex flex-col items-center justify-center rounded-[10px]",
                 "text-xs font-medium transition-colors",
                 isToday
                   ? "bg-brand-primary font-bold text-white"
@@ -116,10 +116,10 @@ export default function Calendar({ events = [] }) {
               {day}
               {/* Event dot — shown below the day number */}
               {hasEvent && !isToday && (
-                <span className="absolute bottom-1 h-1 w-1 rounded-full bg-brand-primary" />
+                <span className="absolute bottom-[5px] h-1 w-1 rounded-full bg-brand-primary" />
               )}
               {hasEvent && isToday && (
-                <span className="absolute bottom-1 h-1 w-1 rounded-full bg-white/70" />
+                <span className="absolute bottom-[5px] h-1 w-1 rounded-full bg-white/80" />
               )}
             </div>
           );

@@ -28,7 +28,7 @@ export default function GeneratePage() {
           band: l.band_level || l.band,
           tier: l.tier || "Tier 2",
           initial: (l.pseudonym || l.name || "?").charAt(0).toUpperCase(),
-          color: ['#E91626', '#F8B508', '#2563EB', '#15803D', '#7C3AED'][Math.floor(Math.random() * 5)]
+          color: ['#FF2E45', '#FFCA28', '#2563EB', '#22A06B', '#7C3AED'][Math.floor(Math.random() * 5)]
         }));
         setLearners(formatted);
       } catch (err) {

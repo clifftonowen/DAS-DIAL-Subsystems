@@ -23,7 +23,7 @@ export default function TaskList({ title, tasks = [] }) {
   }
 
   return (
-    <div className="rounded-xl border border-brand-border bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-brand-border bg-white p-4 shadow-sm">
       {/* ── Section title ── */}
       <p className="mb-3 text-sm font-semibold text-brand-fg">{title}</p>
 
@@ -46,12 +46,12 @@ export default function TaskList({ title, tasks = [] }) {
             {/* ── Task text + meta ── */}
             <div>
               <p className={[
-                "text-sm font-medium transition-colors",
+                "text-[13px] font-medium transition-colors",
                 item.done ? "text-brand-fg-muted line-through" : "text-brand-fg",
               ].join(" ")}>
                 {item.text}
               </p>
-              <p className="text-xs text-brand-fg-muted">{item.meta}</p>
+              <p className="text-[11px] text-brand-fg-muted">{item.meta}</p>
             </div>
           </div>
         ))}

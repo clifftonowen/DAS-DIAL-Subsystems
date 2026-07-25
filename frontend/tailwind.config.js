@@ -5,18 +5,29 @@ export default {
     extend: {
       colors: {
         brand: {
-          primary: "#E91626",
-          "primary-hover": "#C22933",
+          // --- CRISP BRIGHT REFRESH (design direction 1d) ---
+          // Brighter red identity on a cool, neutral ground. Every component reads
+          // these tokens, so the whole app follows from this block.
+          primary: "#FF2E45",
+          "primary-hover": "#E01730",
           "on-primary": "#FFFFFF",
-          accent: "#F8B508",
-          success: "#15803D",
-          bg: "#FEF2F2",
-          fg: "#000000",
-          "fg-muted": "#6C6C6C",
-          muted: "#F5F6F8",
-          border: "#EEEEEE",
+          accent: "#FFCA28",
+          success: "#22A06B",
+          bg: "#F6F7F9",
+          fg: "#14161A",
+          "fg-muted": "#6B727D",
+          muted: "#F1F3F5",
+          border: "#EAECEF",
           destructive: "#78050D",
-          ring: "#E91626",
+          ring: "#FF2E45",
+
+          // Welcome banner surface — pale rose, used by HeroBanner.jsx.
+          // hero-accent tints the banner's decorative circles. It equals `primary`
+          // in Crisp Bright but stays separate: the design's other directions
+          // diverge (Coral pairs #F5323F with a green hero).
+          "hero-bg": "#FFE0E3",
+          "hero-text": "#14161A",
+          "hero-accent": "#FF2E45",
 
           // --- DASHBOARD PROTOTYPE ADDITIONS (Step 2) ---
           // Informational blue + warm surface for alert cards
@@ -25,10 +36,10 @@ export default {
 
           // Per-skill chart colours — one per cognitive dimension
           // Used by ProfileRadarChart.jsx, SkillBars.jsx, DeficiencyAlerts.jsx
-          "chart-1": "#E91626", // Phonological Processing
-          "chart-2": "#F8B508", // Decoding
+          "chart-1": "#FF2E45", // Phonological Processing
+          "chart-2": "#FFCA28", // Decoding
           "chart-3": "#2563EB", // Spelling
-          "chart-4": "#15803D", // Comprehension
+          "chart-4": "#22A06B", // Comprehension
           "chart-5": "#7C3AED", // Working Memory
           "chart-6": "#EC4899", // Executive Functioning
           "chart-7": "#F97316", // Visualisation

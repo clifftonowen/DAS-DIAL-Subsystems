@@ -72,3 +72,27 @@ def build_activity_prompt(chunks: list[dict], params: dict, profile: dict | None
         f"{_fmt_request(params, profile)}\n\n"
         "Design the learning activity now, following the system rules."
     )
+
+
+def model_refused(text: str | None) -> bool:
+    """True if the model self-refused with an INSUFFICIENT_CONTEXT signal on its first line.
+
+    Tolerant of spacing/case/punctuation — models write 'INSUFFICIENT CONTEXT', bold it, or
+    lowercase it, and almost never emit the exact underscore sentinel. Shared by the API
+    service and the scripts.generate_activity CLI so both refuse on the same rule.
+    """
+    if not text or not text.strip():
+        return False
+    first_line = text.strip().splitlines()[0]
+    norm = "".join(ch for ch in first_line.lower() if ch.isalnum())  # drop spaces/_/markdown
+    return norm.startswith("insufficientcontext")
+
+
+def top_similarity(chunks: list[dict]) -> float | None:
+    """Best semantic similarity across retrieved chunks, or None if none carry one.
+
+    Hybrid retrieval orders by RRF score, so the first row is not necessarily the most
+    semantically similar, and keyword-only rows have similarity None — hence max(), not [0].
+    """
+    sims = [c["similarity"] for c in chunks if isinstance(c.get("similarity"), (int, float))]
+    return max(sims) if sims else None

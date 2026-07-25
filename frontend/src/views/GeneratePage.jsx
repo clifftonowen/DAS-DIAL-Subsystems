@@ -1,8 +1,11 @@
 // GeneratePage.jsx — Interface for generating learning activities.
 // Rendered at route "/generate" inside the Dashboard shell.
 //
-// Allows searching for a learner with an autocomplete dropdown,
-// selecting them, and (eventually) triggering activity generation.
+// Search a learner, then generate. The learner's stored profile is the input:
+// the backend derives the retrieval query from their weakest cognitive dimensions,
+// grounds the activity in curriculum_chunks, and refuses (INSUFFICIENT_CONTEXT)
+// rather than inventing one when the corpus does not cover the need. The optional
+// notes field only steers that query — it never replaces the profile.
 
 import { useState, useRef, useEffect } from "react";
 import Button from "../components/Button";
@@ -14,8 +17,9 @@ export default function GeneratePage() {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [learners, setLearners] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [result, setResult] = useState(null);
-  
+  const [notes, setNotes] = useState("");
+  const [result, setResult] = useState(null);   // API payload, or { error } on failure
+
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -76,17 +80,25 @@ export default function GeneratePage() {
     setIsGenerating(true);
     setResult(null);
     try {
-      // Assuming we just pass the learner's ID as the profile_id to keep it simple, 
-      // or we'd ideally fetch their most recent profile ID. For now:
-      const activity = await generateActivity(selectedStudent.id, { theme: "General" });
-      setResult({ success: true, message: "Activity generated successfully!", data: activity });
+      // The learner id is enough — the backend resolves it to their learner_profiles
+      // row and builds the query from it. Band is passed only when it matches the
+      // curriculum's own vocabulary; any other value would filter the corpus to
+      // nothing and turn every request into a refusal.
+      const band = /^A[123]$/.test(selectedStudent.band || "") ? selectedStudent.band : undefined;
+      const data = await generateActivity(selectedStudent.id, { band, notes: notes.trim() });
+      setResult(data);
     } catch (err) {
       console.error(err);
-      setResult({ success: false, message: "Failed to generate activity: " + err.message });
+      setResult({ error: err.message });
     } finally {
       setIsGenerating(false);
     }
   };
+
+  // Refusals come back 200 with a status, not as thrown errors — the request
+  // succeeded, the corpus just did not cover this learner's need.
+  const refused = result?.status === "INSUFFICIENT_CONTEXT";
+  const noProfile = refused && !result.profile_id;
 
   return (
     <div className="mx-auto mt-10 w-full max-w-2xl">
@@ -155,6 +167,15 @@ export default function GeneratePage() {
         </Button>
       </div>
 
+      {/* ── Optional steer — appended to the profile-derived retrieval query ── */}
+      <input
+        type="text"
+        placeholder="Optional focus, e.g. rhyming games, short vowels…"
+        className="mt-3 h-11 w-full rounded-lg border-2 border-brand-border px-4 text-sm outline-none transition-colors focus:border-brand-primary"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+      />
+
       {/* ── Selected Learner Card ── */}
       {selectedStudent && (
         <div className="mt-6 flex items-center gap-4 rounded-xl border border-brand-border bg-white p-4 shadow-sm animate-in fade-in slide-in-from-top-2">
@@ -176,10 +197,73 @@ export default function GeneratePage() {
         </div>
       )}
 
-      {/* ── Generation Result ── */}
-      {result && (
-        <div className={`mt-4 rounded-xl p-4 border ${result.success ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-          <p className="font-medium">{result.message}</p>
+      {/* ── Request failed (network / 4xx / 5xx) ── */}
+      {result?.error && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
+          <p className="font-medium">Could not generate activity</p>
+          <p className="mt-1 text-sm">{result.error}</p>
+        </div>
+      )}
+
+      {/* ── Refused: the curriculum does not cover this learner's need ── */}
+      {refused && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+          <p className="font-medium">
+            {noProfile ? "This learner has no profile yet" : "Not enough curriculum grounding"}
+          </p>
+          <p className="mt-1 text-sm">
+            {noProfile
+              ? "Generate a profile from their assessments first — the activity is built from it."
+              : result.reason}
+          </p>
+          {result.query && (
+            <p className="mt-2 text-xs opacity-80">Query: “{result.query}”</p>
+          )}
+        </div>
+      )}
+
+      {/* ── Generated activity + the curriculum it was grounded in ── */}
+      {result?.status === "GENERATED" && (
+        <div className="mt-4 space-y-4">
+          <div className="rounded-xl border border-brand-border bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-semibold text-brand-fg">Generated activity</p>
+              <span className="rounded bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
+                Grounded in {result.grounding?.length ?? 0} source
+                {result.grounding?.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            {/* whitespace-pre-wrap: the model returns plain text with its own line breaks */}
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-brand-fg">
+              {result.content}
+            </p>
+          </div>
+
+          {result.grounding?.length > 0 && (
+            <div className="rounded-xl border border-brand-border bg-white p-5 shadow-sm">
+              <p className="mb-3 text-sm font-semibold text-brand-fg">Grounding sources</p>
+              <ul className="space-y-2.5">
+                {result.grounding.map((g, i) => (
+                  <li key={i} className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-medium text-brand-fg">{g.title}</p>
+                      <p className="text-[11px] text-brand-fg-muted">
+                        {[g.source && `${g.source} p.${g.page ?? "?"}`, g.concept, g.stage]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    </div>
+                    {typeof g.similarity === "number" && (
+                      <span className="shrink-0 rounded bg-brand-muted px-2 py-0.5 text-[11px] font-medium text-brand-fg-muted">
+                        {g.similarity.toFixed(2)}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-[11px] text-brand-fg-muted">Query: “{result.query}”</p>
+            </div>
+          )}
         </div>
       )}
     </div>

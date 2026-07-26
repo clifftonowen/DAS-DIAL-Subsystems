@@ -57,10 +57,12 @@ export default function Calendar({ events = [] }) {
 
   // ── Render ────────────────────────────────────────────────────────
   return (
-    <div className="flex h-full flex-col rounded-xl border border-brand-border bg-white p-4 shadow-sm">
+    // h-full matches the task column beside it. The month grid itself stays at
+    // its natural size (see the day-cell grid below) — only the card stretches.
+    <div className="flex h-full flex-col rounded-2xl border border-brand-border bg-white p-[18px] shadow-sm">
 
       {/* ── Header: title + nav buttons ── */}
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3.5 flex items-center justify-between">
         <p className="text-sm font-semibold text-brand-fg">Calendar</p>
         <div className="flex items-center gap-2">
           <button
@@ -84,14 +86,17 @@ export default function Calendar({ events = [] }) {
       <div className="calendar-grid mb-1">
         {DAY_HEADERS.map(d => (
           <div key={d} className="py-1 text-center text-[10px] font-semibold
-                                  uppercase tracking-wide text-brand-fg-muted">
+                                  uppercase tracking-[0.06em] text-brand-fg-muted">
             {d}
           </div>
         ))}
       </div>
 
       {/* ── Day cells ── */}
-      <div className="calendar-grid flex-1">
+      {/* flex-1 lets the grid take the card's leftover height, but content-start
+          packs the week rows at the top so the cells keep their 2px gap instead
+          of spreading out to fill it. */}
+      <div className="calendar-grid flex-1 content-start">
         {cells.map((day, idx) => {
           if (day === null) return <div key={`empty-${idx}`} />;
 
@@ -102,11 +107,11 @@ export default function Calendar({ events = [] }) {
           const hasEvent = eventDays.has(day);
 
           return (
-            // .cal-day defined in index.css: aspect-ratio:1, min-height:48px
+            // .cal-day defined in index.css: aspect-ratio:1, height clamped 32-48px
             <div
               key={day}
               className={[
-                "cal-day relative flex flex-col items-center justify-center rounded-lg",
+                "cal-day relative flex flex-col items-center justify-center rounded-[10px]",
                 "text-xs font-medium transition-colors",
                 isToday
                   ? "bg-brand-primary font-bold text-white"
@@ -116,10 +121,10 @@ export default function Calendar({ events = [] }) {
               {day}
               {/* Event dot — shown below the day number */}
               {hasEvent && !isToday && (
-                <span className="absolute bottom-1 h-1 w-1 rounded-full bg-brand-primary" />
+                <span className="absolute bottom-[5px] h-1 w-1 rounded-full bg-brand-primary" />
               )}
               {hasEvent && isToday && (
-                <span className="absolute bottom-1 h-1 w-1 rounded-full bg-white/70" />
+                <span className="absolute bottom-[5px] h-1 w-1 rounded-full bg-white/80" />
               )}
             </div>
           );

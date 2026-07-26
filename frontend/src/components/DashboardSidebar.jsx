@@ -28,14 +28,14 @@ export default function Sidebar() {
           end={to === "/"}
           className={({ isActive }) =>
             [
-              // Base styles — match prototype .nav-item
-              "flex items-center gap-2.5 rounded-lg px-3.5 py-2.5",
-              "text-sm font-medium transition-all duration-150",
-              // Active: brand red background + white text (prototype .nav-item.active)
+              // Base styles — metrics per DashPreview.dc.html (12px radius, 11/14 padding)
+              "flex items-center gap-2.5 rounded-xl px-3.5 py-[11px]",
+              "text-sm transition-all duration-150",
+              // Active: brand red background + white text, slightly heavier weight
               // Inactive: muted text, hover grey background
               isActive
-                ? "bg-brand-primary text-brand-on-primary"
-                : "text-brand-fg-muted hover:bg-brand-muted hover:text-brand-fg",
+                ? "bg-brand-primary font-semibold text-brand-on-primary"
+                : "font-medium text-brand-fg-muted hover:bg-brand-muted hover:text-brand-fg",
             ].join(" ")
           }
         >
@@ -49,7 +49,7 @@ export default function Sidebar() {
       {/* ── Settings button (static, no route yet) ── */}
       <div className="border-t border-brand-border pt-3">
         <button
-          className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2.5
+          className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-[11px]
                      text-xs font-medium text-brand-fg-muted
                      transition-all duration-150 hover:bg-brand-muted hover:text-brand-fg"
         >

@@ -1,17 +1,30 @@
 from fastapi import APIRouter, Depends
 from app.core.security import current_therapist
 from app.repositories.base import BaseRepository
+from app.repositories.learner_repository import LearnerRepository
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 class DashboardRepository(BaseRepository):
     table = "data"
 
+    def __init__(self):
+        self.learners = LearnerRepository()
+
     def get_stats(self) -> dict:
         flagged_count = 2
         needs_profiling = 3
         high_risk = 1
         inactive = 1
+        total_learners = 5
+
+        # Counted through LearnerRepository so learner access stays in one place.
+        try:
+            rows = self.learners.list_all()
+            if rows is not None:
+                total_learners = len(rows)
+        except Exception:
+            pass
 
         try:
             activities = self.db.select("*").eq("status", "FLAGGED").table("learning_activities").execute().data
@@ -25,6 +38,7 @@ class DashboardRepository(BaseRepository):
             pass
 
         return {
+            "total_learners": total_learners,
             "flagged": flagged_count,
             "needs_profiling": needs_profiling,
             "high_risk": high_risk,

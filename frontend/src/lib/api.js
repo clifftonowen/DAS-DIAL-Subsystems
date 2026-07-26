@@ -17,8 +17,14 @@ export async function api(path, options = {}) {
 
 export const listLearners = () => api("/learners");
 export const generateProfile = (learnerId) => api(`/profiles/${learnerId}`, { method: "POST" });
-export const generateActivity = (profileId, params) =>
-  api(`/activities/${profileId}/generate`, { method: "POST", body: JSON.stringify(params) });
+// Curriculum-grounded generation. `id` may be a profile id or a learner id — the
+// backend resolves either against learner_profiles and derives the retrieval query
+// from that profile. `params` only steers it: { band, concept, stage, notes, k }.
+// Resolves to { status: "GENERATED" | "INSUFFICIENT_CONTEXT", content, query,
+//               grounding: [{ title, source, page, concept, stage, similarity }],
+//               profile_id, reason? }
+export const generateActivity = (id, params = {}) =>
+  api(`/activities/${id}/generate`, { method: "POST", body: JSON.stringify(params) });
 
 // New GET endpoints added per implementation plan
 export const getLearner = (learnerId) => api(`/learners/${learnerId}`);

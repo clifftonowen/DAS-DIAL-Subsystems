@@ -22,18 +22,18 @@ export default function ProfileRadarChart({ skills }) {
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
-            <PolarGrid stroke="#EEEEEE" />
-            <PolarAngleAxis 
-              dataKey="subject" 
-              tick={{ fill: "#6C6C6C", fontSize: 10, fontWeight: 500 }} 
+            <PolarGrid stroke="#EAECEF" />
+            <PolarAngleAxis
+              dataKey="subject"
+              tick={{ fill: "#6B727D", fontSize: 10, fontWeight: 500 }}
             />
             {/* The radar polygon — brand primary colour with low opacity fill */}
             <Radar
               name="Student"
               dataKey="score"
-              stroke="#E91626"
+              stroke="#FF2E45"
               strokeWidth={2}
-              fill="#E91626"
+              fill="#FF2E45"
               fillOpacity={0.12}
             />
             {/* Note: we can't easily do per-dot colors with standard Radar, 

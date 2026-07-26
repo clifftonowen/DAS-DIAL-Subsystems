@@ -30,7 +30,19 @@ class Settings(BaseSettings):
 
     # App
     app_name: str = "DAS D.I.A.L"
-    cors_origins: str = "http://localhost:5173"
+    # Comma-separated browser origins allowed to call the API. Since the UI signs in
+    # through AuthController rather than talking to Supabase directly, log-in itself
+    # is now a cross-origin request, so an origin missing here breaks authentication
+    # outright — the browser rejects the response and fetch fails with
+    # "Failed to fetch", with no status for the UI to report.
+    #
+    # An origin is scheme + host + port, and localhost is NOT the same origin as
+    # 127.0.0.1, so both spellings of both ports are listed: 5173 is `npm run dev`,
+    # 4173 is `npm run preview` (the built app the Selenium system tests drive).
+    cors_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:4173,http://127.0.0.1:4173"
+    )
 
 
 settings = Settings()

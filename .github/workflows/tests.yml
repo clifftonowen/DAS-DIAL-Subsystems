@@ -138,6 +138,13 @@ jobs:
 
       - name: Start backend (uvicorn)
         working-directory: backend
+        env:
+          # The browser loads the app from FRONTEND_URL and calls this API
+          # cross-origin, so that exact origin must be allowed — log-in goes through
+          # AuthController now, so a missing origin fails authentication with
+          # "Failed to fetch" rather than an HTTP error. Set explicitly rather than
+          # relying on the default in app/core/config.py.
+          CORS_ORIGINS: http://127.0.0.1:4173
         run: |
           nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
           for i in $(seq 1 30); do

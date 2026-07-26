@@ -25,3 +25,44 @@ def login(driver, base_url, email, password, timeout=20):
     wait.until(EC.presence_of_element_located(
         (By.XPATH, "//button[contains(., 'My Profile')]")
     ))
+
+
+def sign_up(driver, base_url, email, password, timeout=20):
+    """Drive the real AuthView sign-up form (UC8).
+
+    AuthView starts in login mode; the ghost button flips it to sign-up, after
+    which the submit button reads "Sign up". Does NOT wait for a dashboard: with
+    email confirmation enabled UC8 ends with the therapist still signed out.
+    """
+    driver.get(base_url)
+    wait = WebDriverWait(driver, timeout)
+
+    wait.until(EC.element_to_be_clickable(
+        (By.XPATH, "//button[normalize-space()='Need an account? Sign up']")
+    )).click()
+
+    wait.until(EC.presence_of_element_located((By.ID, "email"))).send_keys(email)
+    driver.find_element(By.ID, "password").send_keys(password)
+    driver.find_element(
+        By.XPATH, "//button[@type='submit' and normalize-space()='Sign up']"
+    ).click()
+
+
+def feedback(driver, timeout=20):
+    """Wait for AuthView's outcome message and return (role, text).
+
+    AuthView renders a success notice as role="status" and a failure as
+    role="alert" — the two outcomes of the `alt` fragment in both diagrams.
+    """
+    wait = WebDriverWait(driver, timeout)
+    element = wait.until(
+        lambda d: next(
+            iter(d.find_elements(By.CSS_SELECTOR, "[role='status'], [role='alert']")), None
+        )
+    )
+    return element.get_attribute("role"), element.text
+
+
+def is_signed_in(driver):
+    """True when the authenticated shell rendered (the profile menu trigger)."""
+    return bool(driver.find_elements(By.XPATH, "//button[contains(., 'My Profile')]"))

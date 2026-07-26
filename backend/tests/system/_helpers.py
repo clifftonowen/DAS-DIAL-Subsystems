@@ -69,6 +69,46 @@ def is_signed_in(driver):
     return bool(driver.find_elements(By.XPATH, "//button[contains(., 'My Profile')]"))
 
 
+def sign_out(driver, timeout=20):
+    """Open the profile menu and sign out, leaving the login form on screen.
+
+    Selectors mirror test_profile_menu.py: the trigger's text is "<initial> My
+    Profile", so it needs contains() rather than equality.
+    """
+    wait = WebDriverWait(driver, timeout)
+    driver.find_element(By.XPATH, "//button[contains(., 'My Profile')]").click()
+    wait.until(EC.element_to_be_clickable(
+        (By.XPATH, "//*[normalize-space()='Sign out']")
+    )).click()
+    wait.until(EC.presence_of_element_located((By.ID, "email")))
+
+
+def signup_outcome(driver, timeout=20):
+    """Wait for whichever of UC8's two success shapes the project produces.
+
+    Returns ("signed_in", "") or (role, text) from `feedback`.
+
+    UC8's positive branch ends differently depending on one project setting, and
+    both endings satisfy the postcondition "the account exists and is usable":
+
+    - "Confirm email" OFF -> Supabase issues a session at sign-up, so AuthView
+      stores it and the therapist lands on the dashboard. No notice is rendered.
+    - "Confirm email" ON  -> no session, so AuthView shows "Account is
+      successfully created..." and returns to the login form, signed out.
+
+    A test that waited only for the notice would fail on a correctly-behaving app
+    whenever confirmation is disabled — which is the configuration the e2e tier
+    needs, to keep sign-up off the email quota.
+    """
+    wait = WebDriverWait(driver, timeout)
+    wait.until(lambda d: is_signed_in(d) or d.find_elements(
+        By.CSS_SELECTOR, "[role='status'], [role='alert']"
+    ))
+    if is_signed_in(driver):
+        return "signed_in", ""
+    return feedback(driver, timeout=timeout)
+
+
 def skip_if_rate_limited(role, text):
     """Skip when the error on screen is Supabase's quota rather than a real refusal.
 

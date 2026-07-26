@@ -7,15 +7,40 @@ The real repositories reach the database through a single seam:
 
 `FakeSupabase` implements just enough of that fluent PostgREST-style chain
 (backed by plain dicts) plus the `.auth` surface used by
-`app.core.security.current_therapist`. Swap it in with the `fake_supabase`
-fixture in conftest.py — no network, no real project required.
+`app.core.security.current_therapist` and `app.gateways.auth_gateway`. Swap it in
+with the `fake_supabase` fixture in conftest.py -- no network, no real project
+required.
 
 Supported chain methods: table, select, insert, upsert, update, delete,
 eq, neq, gt, gte, lt, lte, order, limit, range, single, execute.
 Unsupported filters simply pass through (they don't narrow results), which
 keeps the double small; extend here if a repository needs more precision.
+
+Supported auth methods (UC6 Log In / UC8 Sign Up): sign_up,
+sign_in_with_password, get_user, admin.sign_out, admin.delete_user. Failures raise
+the *real* gotrue exception classes, matching which type live Supabase raises for
+each case, because `AuthGateway` discriminates on them -- a bare `Exception` would
+sail straight through it.
 """
+import time
 from types import SimpleNamespace
+from uuid import uuid4
+
+try:  # same guarded import as app.gateways.auth_gateway
+    # The double raises the SAME classes real Supabase does. That matters: a weak
+    # password surfaces as AuthWeakPasswordError, which is NOT an AuthApiError, and
+    # a fake that raised the wrong type would hide exactly that bug.
+    from gotrue.errors import AuthApiError, AuthWeakPasswordError
+except Exception:  # pragma: no cover - fallback if the package layout changes
+    class AuthApiError(Exception):
+        def __init__(self, message, status=400, code=None):
+            super().__init__(message)
+            self.status, self.code = status, code
+
+    class AuthWeakPasswordError(Exception):
+        def __init__(self, message, status=422, reasons=None):
+            super().__init__(message)
+            self.status, self.reasons = status, reasons or []
 
 
 class _Result:
@@ -27,9 +52,10 @@ class _Result:
 class _Query:
     """A chainable query/command builder bound to one table in the store."""
 
-    def __init__(self, store, table):
+    def __init__(self, store, table, log=None):
         self._store = store
         self._table = table
+        self._log = log if log is not None else []
         self._op = "select"
         self._payload = None
         self._eq = []   # list of (col, value) equality filters
@@ -88,13 +114,32 @@ class _Query:
 
     # -- terminal --
     def execute(self):
+        # Record every round trip so an integration test can assert that an edge
+        # of the call graph was NOT taken (e.g. IT-6.4: no lookup on the
+        # invalid-credentials path).
+        self._log.append((self._table, self._op))
         rows = self._store.setdefault(self._table, [])
         if self._op == "select":
             out = [r for r in rows if self._matches(r)]
             return _Result(out)
-        if self._op in ("insert", "upsert"):
+        if self._op == "insert":
             items = self._payload if isinstance(self._payload, list) else [self._payload]
-            rows.extend(items)
+            rows.extend(dict(i) for i in items)
+            return _Result(items)
+        if self._op == "upsert":
+            # Real upsert conflicts on the primary key, so saving the same row
+            # twice must leave ONE row. Without this, UserRepository.save being
+            # idempotent is untestable.
+            items = self._payload if isinstance(self._payload, list) else [self._payload]
+            for item in items:
+                key = item.get("id")
+                existing = next(
+                    (r for r in rows if key is not None and r.get("id") == key), None
+                )
+                if existing is None:
+                    rows.append(dict(item))
+                else:
+                    existing.update(item)
             return _Result(items)
         if self._op == "update":
             changed = []
@@ -122,15 +167,95 @@ class _Query:
         return True
 
 
+class _AuthAdmin:
+    """The `.auth.admin` surface — service-role operations."""
+
+    def __init__(self, auth):
+        self._auth = auth
+
+    def sign_out(self, access_token):
+        """Revoke a token. Revoking an unknown/expired token is an error, which
+        is exactly the case AuthService treats as idempotent."""
+        if self._auth._tokens.pop(access_token, None) is None:
+            raise AuthApiError("Invalid token", 401, "invalid_token")
+
+    def delete_user(self, user_id):
+        for email, user in list(self._auth._users.items()):
+            if user["id"] == user_id:
+                del self._auth._users[email]
+                return
+        raise AuthApiError("User not found", 404, "user_not_found")
+
+
 class _Auth:
-    """Minimal `.auth` surface used by security.current_therapist."""
+    """The `.auth` surface used by AuthGateway and security.current_therapist.
 
-    def __init__(self, user_id):
-        self._user_id = user_id
+    Holds its own little user directory so a sign-up followed by a log-in behaves
+    like the real thing across a whole integration test.
+    """
 
-    def get_user(self, _token):
-        # current_therapist reads result.user.id
-        return SimpleNamespace(user=SimpleNamespace(id=self._user_id))
+    def __init__(self, user_id, auth_users=None, confirm_email=False):
+        self._default_user_id = user_id
+        self._confirm_email = confirm_email
+        self._users = {}    # email -> {"id", "email", "password"}
+        self._tokens = {}   # access_token -> user id
+        for u in auth_users or []:
+            self._users[u["email"]] = {
+                "id": u.get("id") or str(uuid4()),
+                "email": u["email"],
+                "password": u["password"],
+            }
+        self.admin = _AuthAdmin(self)
+
+    # ---------------------------------------------------------------- UC8
+    MIN_PASSWORD_LENGTH = 6   # Supabase's own default
+
+    def sign_up(self, credentials):
+        email, password = credentials["email"], credentials["password"]
+        if len(password) < self.MIN_PASSWORD_LENGTH:
+            raise AuthWeakPasswordError(
+                f"Password should be at least {self.MIN_PASSWORD_LENGTH} characters.",
+                422, ["length"],
+            )
+        if email in self._users:
+            raise AuthApiError("User already registered", 422, "user_already_exists")
+        user = {"id": str(uuid4()), "email": email, "password": password}
+        self._users[email] = user
+        # With email confirmation on, Supabase returns a user but no session.
+        session = None if self._confirm_email else self._issue(user)
+        return SimpleNamespace(user=self._as_user(user), session=session)
+
+    # ---------------------------------------------------------------- UC6
+    def sign_in_with_password(self, credentials):
+        email, password = credentials["email"], credentials["password"]
+        user = self._users.get(email)
+        if user is None or user["password"] != password:
+            raise AuthApiError("Invalid login credentials", 400, "invalid_credentials")
+        return SimpleNamespace(user=self._as_user(user), session=self._issue(user))
+
+    def get_user(self, access_token):
+        """Resolve a bearer token, as current_therapist does on every protected
+        request. Tokens this double issued map to their own user; anything else
+        falls back to the fixture's `user_id` so tests written before the auth
+        surface existed keep working."""
+        user_id = self._tokens.get(access_token, self._default_user_id)
+        if user_id is None:
+            return None
+        return SimpleNamespace(user=SimpleNamespace(id=user_id))
+
+    # -- helpers --
+    def _issue(self, user):
+        token = f"fake-access-{uuid4().hex[:12]}"
+        self._tokens[token] = user["id"]
+        return SimpleNamespace(
+            access_token=token,
+            refresh_token=f"fake-refresh-{uuid4().hex[:12]}",
+            expires_at=int(time.time()) + 3600,
+        )
+
+    @staticmethod
+    def _as_user(user):
+        return SimpleNamespace(id=user["id"], email=user["email"])
 
 
 class FakeSupabase:
@@ -138,13 +263,25 @@ class FakeSupabase:
 
     Args:
         seed: optional {table_name: [row_dicts]} to preload.
-        user_id: the auth user id returned by `.auth.get_user()`.
+        user_id: the auth user id `.auth.get_user()` falls back to.
+        auth_users: optional [{"id"?, "email", "password"}] credential pairs the
+            fake Authentication Service accepts.
+        confirm_email: when True, `sign_up` returns a user with no session,
+            modelling a project that has email confirmation enabled.
     """
 
-    def __init__(self, seed=None, user_id="test-therapist-id"):
+    def __init__(self, seed=None, user_id="test-therapist-id",
+                 auth_users=None, confirm_email=False):
         # Deep-ish copy so tests don't leak state between cases.
         self.store = {k: [dict(r) for r in v] for k, v in (seed or {}).items()}
-        self.auth = _Auth(user_id)
+        self.auth = _Auth(user_id, auth_users=auth_users, confirm_email=confirm_email)
+        # Every executed round trip, as (table, op) — lets a test prove an edge
+        # was never taken. See `queries_on()`.
+        self.queries = []
 
     def table(self, name):
-        return _Query(self.store, name)
+        return _Query(self.store, name, log=self.queries)
+
+    def queries_on(self, table):
+        """The round trips made against one table, for interaction assertions."""
+        return [q for q in self.queries if q[0] == table]

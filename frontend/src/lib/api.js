@@ -11,14 +11,42 @@ async function authHeader() {
 export async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(await authHeader()), ...options.headers };
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  // Read the body before checking `ok` so FastAPI's `detail` survives into the
+  // thrown Error — the UI has no other way to show why a request failed. The
+  // catch covers empty bodies (e.g. 204 from /auth/logout).
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(errorMessage(res, data));
+  return data;
 }
+
+/** FastAPI sends `detail` as a string for HTTPException but as a list of
+ *  {loc, msg, type} objects for 422 validation errors. Stringifying the list
+ *  would put "[object Object]" in front of the user, so pull out the first msg. */
+function errorMessage(res, data) {
+  const { detail } = data;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail[0]?.msg) return detail[0].msg;
+  return `${res.status} ${res.statusText}`;
+}
+
+// Auth — the AuthView -> AuthController messages in the UC6 and UC8 sequence
+// diagrams. These are the only calls made before a session exists, so
+// authHeader() contributes nothing to them.
+export const logIn = (email, password) =>
+  api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+export const signUp = (email, password) =>
+  api("/auth/signup", { method: "POST", body: JSON.stringify({ email, password }) });
 
 export const listLearners = () => api("/learners");
 export const generateProfile = (learnerId) => api(`/profiles/${learnerId}`, { method: "POST" });
-export const generateActivity = (profileId, params) =>
-  api(`/activities/${profileId}/generate`, { method: "POST", body: JSON.stringify(params) });
+// Curriculum-grounded generation. `id` may be a profile id or a learner id — the
+// backend resolves either against learner_profiles and derives the retrieval query
+// from that profile. `params` only steers it: { band, concept, stage, notes, k }.
+// Resolves to { status: "GENERATED" | "INSUFFICIENT_CONTEXT", content, query,
+//               grounding: [{ title, source, page, concept, stage, similarity }],
+//               profile_id, reason? }
+export const generateActivity = (id, params = {}) =>
+  api(`/activities/${id}/generate`, { method: "POST", body: JSON.stringify(params) });
 
 // New GET endpoints added per implementation plan
 export const getLearner = (learnerId) => api(`/learners/${learnerId}`);

@@ -33,7 +33,7 @@ export default function LearnerDetailPage() {
         band: learnerData.band_level || learnerData.band,
         tier: learnerData.tier || "Tier 2",
         initial: (learnerData.pseudonym || learnerData.name || "?").charAt(0).toUpperCase(),
-        color: ['#E91626', '#F8B508', '#2563EB', '#15803D', '#7C3AED'][Math.floor(Math.random() * 5)]
+        color: ['#FF2E45', '#FFCA28', '#2563EB', '#22A06B', '#7C3AED'][Math.floor(Math.random() * 5)]
       };
       setStudent(formattedLearner);
 

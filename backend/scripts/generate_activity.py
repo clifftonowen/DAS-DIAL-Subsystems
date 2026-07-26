@@ -23,23 +23,13 @@ def _grounding_header(chunks: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _model_refused(text: str | None) -> bool:
-    """True if the model self-refused with an INSUFFICIENT_CONTEXT signal on its first line.
-    Tolerant of spacing/case/punctuation — models write 'INSUFFICIENT CONTEXT', bold it, or
-    lowercase it, and almost never emit the exact underscore sentinel."""
-    if not text or not text.strip():
-        return False
-    first_line = text.strip().splitlines()[0]
-    norm = "".join(ch for ch in first_line.lower() if ch.isalnum())  # drop spaces/_/markdown
-    return norm.startswith("insufficientcontext")
-
-
 def cmd_generate(args: argparse.Namespace) -> int:
     # lazy: these need the embedding gateway + Supabase + the LLM
     from app.services.curriculum_retrieval_service import CurriculumRetrievalService
     from app.gateways.llm_client import LLMApiClient
     from app.prompts.activity_prompts import (
         SYSTEM_PROMPT, INSUFFICIENT_CONTEXT, build_activity_prompt,
+        model_refused, top_similarity,
     )
 
     params = {"band": args.band, "concept": args.concept, "stage": args.stage, "notes": args.query}
@@ -54,10 +44,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
     )
 
     # Guardrail: refuse before spending an LLM call when grounding is missing or weak.
-    # Hybrid orders by RRF score, so the top row isn't necessarily the most semantically similar
-    # one — gate on the best semantic similarity across returned rows (keyword-only rows are None).
-    sims = [c["similarity"] for c in chunks if isinstance(c.get("similarity"), (int, float))]
-    top_sim = max(sims) if sims else None
+    top_sim = top_similarity(chunks)
     if not chunks or top_sim is None or top_sim < args.min_sim:
         best = f"{top_sim:.3f}" if isinstance(top_sim, (int, float)) else "none"
         print(f"{INSUFFICIENT_CONTEXT}\n  query/filters not covered by the corpus "
@@ -76,7 +63,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
     # off-topic request whose generic tokens sneak over the threshold). Detect it tolerantly —
     # models write "INSUFFICIENT CONTEXT", "insufficient_context", "**INSUFFICIENT_CONTEXT**",
     # etc., rarely the exact sentinel — and surface it as a refusal, not an activity.
-    if _model_refused(activity):
+    if model_refused(activity):
         print("INSUFFICIENT_CONTEXT  (model refused — grounding does not cover the request)\n")
         print((activity or "").strip())
         return 2
@@ -116,3 +103,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

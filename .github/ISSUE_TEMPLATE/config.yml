@@ -1,0 +1,6 @@
+# Force everyone through a template (no blank issues) so work is always trackable.
+blank_issues_enabled: false
+contact_links:
+  - name: 📋 Project board — see who's working on what
+    url: https://github.com/clifftonowen/DAS-DIAL-Subsystems/projects
+    about: Check the board and open PRs BEFORE starting, so you don't overlap a teammate.

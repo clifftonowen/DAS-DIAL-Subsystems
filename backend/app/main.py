@@ -9,7 +9,9 @@ app = FastAPI(title=settings.app_name)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins.split(","),
+    # strip() so "a, b" in .env works — an origin with a stray space silently fails
+    # to match, and a blocked origin looks like a network error, not a config error.
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

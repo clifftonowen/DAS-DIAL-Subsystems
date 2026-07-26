@@ -3,9 +3,10 @@
 How to write and run **unit** tests for React components. Run everything from the
 `frontend/` directory.
 
-> Two more frontend tiers are **scaffolded** (stubs, fill in as features land):
-> **integration** (Jest + MSW) in [`src/views/__integration__/`](../src/views/__integration__/README.md),
-> and **e2e** (Playwright) in [`e2e/`](../e2e/README.md).
+> The **integration** tier (Jest + MSW) in
+> [`src/views/__integration__/`](../src/views/__integration__/README.md) is **implemented** —
+> read it before touching `jest.config.cjs`, which now carries three settings MSW depends on.
+> The **e2e** tier (Playwright) in [`e2e/`](../e2e/README.md) is still scaffolded.
 
 ```bash
 npm install                   # once — installs Jest, RTL, babel, etc.
@@ -16,19 +17,31 @@ npx jest ProfileMenu          # run one file by name filter
 
 ## Where tests live
 
-Co-locate tests next to the components under `frontend/src/components/__tests__/`,
-named `<Component>.test.jsx`. Jest auto-discovers anything matching
-`src/**/*.test.{js,jsx}` (see `frontend/jest.config.cjs`) — no file to register in.
+Co-locate tests next to the code under test: components in
+`frontend/src/components/__tests__/`, views in `frontend/src/views/__tests__/`, named
+`<Component>.test.jsx`. Jest auto-discovers anything matching `src/**/*.test.{js,jsx}`
+(see `frontend/jest.config.cjs`) — no file to register in.
+
+Tests derived from a use case carry it in the filename — `AuthView.uc6.test.jsx`,
+`AuthView.uc8.test.jsx` — so a case ID in the test plan traces straight to a file.
 
 ```
 frontend/
   jest.config.cjs                 # jest + inline babel config (scoped to jest only)
   src/setupTests.js               # jest-dom matchers + TextEncoder polyfill (auto-loaded)
   test/fileMock.cjs               # stub returned for imported images/assets
+  test/babelPluginImportMeta.cjs  # makes Vite's import.meta.env loadable under Jest
+  src/test-utils/                 # MSW handlers + server (integration tier only)
   src/components/
     ProfileMenu.jsx
     __tests__/
       ProfileMenu.test.jsx        # <- your tests go here
+  src/views/
+    AuthView.jsx
+    __tests__/
+      AuthView.uc6.test.jsx       # <- view unit tests, named by use case
+    __integration__/
+      AuthView.uc6.integration.test.jsx   # <- level 4, network mocked with MSW
 ```
 
 ## Add a new component test — step by step

@@ -36,7 +36,7 @@ function DashboardShell({ session }) {
     //   grid-template-columns: 220px 1fr
     //   grid-template-rows: auto 1fr
     //   height: 100dvh
-    <div className="shell-grid">
+    <div className="shell-grid bg-brand-bg">
 
       {/* ── Header — spans both columns via .shell-header (index.css) ── */}
       <header className="shell-header flex items-center justify-between

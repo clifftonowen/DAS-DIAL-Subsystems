@@ -1,97 +1,104 @@
 # Frontend integration tests (Jest + MSW)
 
-**Status: scaffolded, not yet implemented.** `LearnersPage.integration.test.jsx` holds
-`test.todo` placeholders — fill them in as views gain real behavior.
+**Status: implemented.** `AuthView.uc6.integration.test.jsx` and
+`AuthView.uc8.integration.test.jsx` are real tests (UC6 IT-6.9/6.10, UC8 IT-8.8/8.9).
+`LearnersPage.integration.test.jsx` is still `test.todo` placeholders — the MSW plumbing
+they need is now in place, so filling them in is just writing bodies.
 
 ## What these are
 
 Integration tests render a **whole view (or a subtree of components) with routing real** and only
 the **network** mocked. They sit between:
 
-- **unit** (`frontend/src/components/__tests__/`) — one component, every collaborator mocked, and
+- **unit** (`src/components/__tests__/`, `src/views/__tests__/`) — one component, every
+  collaborator mocked at the module boundary, and
 - **system** (`backend/tests/system/`, Selenium) — the real browser against the real backend.
 
 They run in Jest/jsdom, so they're fast and deterministic (no browser, no live backend), and they
 catch things unit tests can't: data-fetching + rendering + filtering + navigation working together.
+
+For UC6/UC8 this is **level 4** of the bottom-up call graph — the
+`AuthView -> AuthController` message across the HTTP boundary. It is the only level where
+`src/lib/api.js` is *real code under test*, which matters because that is where request
+shaping and error handling live. Levels 1–3 are in `backend/tests/integration/`.
 
 ## The tool: MSW (Mock Service Worker)
 
 Instead of mocking `lib/api.js` function-by-function, MSW intercepts the real `fetch` calls the app
 makes and returns canned JSON. That means the component under test runs its **actual** data path.
 
-### One-time setup (when you're ready to implement)
+`msw` is installed. Shared setup lives in `src/test-utils/`:
 
-```bash
-cd frontend
-npm i -D msw
-```
+- `handlers.js` — default handlers for routes several tests share, matched with `*` wildcards
+- `server.js` — `setupServer(...handlers)`
 
-Create shared handlers matching the routes in `src/lib/api.js` (base `VITE_API_URL`):
+Lifecycle hooks belong in each test file, so unit tests never start a server:
 
 ```js
-// src/test-utils/handlers.js
-import { http, HttpResponse } from "msw";
-
-const BASE = "http://localhost:8000";           // matches lib/api.js default
-export const handlers = [
-  http.get(`${BASE}/learners`, () =>
-    HttpResponse.json([
-      { id: "l1", name: "Ada", band: "A" },
-      { id: "l2", name: "Bo",  band: "B" },
-    ])),
-  http.get(`${BASE}/learners/:id`, ({ params }) =>
-    HttpResponse.json({ id: params.id, name: "Ada" })),
-];
+beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
 ```
 
-```js
-// src/test-utils/server.js
-import { setupServer } from "msw/node";
-import { handlers } from "./handlers";
-export const server = setupServer(...handlers);
-```
+`onUnhandledRequest: "error"` is deliberate — it turns "the app never made the request" into a
+loud failure instead of a silent pass.
 
 ## Writing a test
 
 ```jsx
-// src/views/__integration__/LearnersPage.integration.test.jsx
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse } from "msw";
 import { server } from "../../test-utils/server";
-import LearnersPage from "../LearnersPage";
+import AuthView from "../AuthView";
 
-// Mock Supabase auth (api.js reads a token from it before every fetch).
+// createClient runs at import time, so lib/supabase is still mocked — it's the
+// token *store*, not the thing under test.
 jest.mock("../../lib/supabase", () => ({
-  supabase: { auth: { getSession: async () => ({ data: { session: { access_token: "t" } } }) } },
+  supabase: {
+    auth: {
+      setSession: jest.fn(),
+      getSession: async () => ({ data: { session: null } }),
+    },
+  },
 }));
 
-beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
-
-test("renders the learners fetched from the API", async () => {
-  render(<MemoryRouter><LearnersPage /></MemoryRouter>);
-  expect(await screen.findByText("Ada")).toBeInTheDocument();
-  expect(screen.getByText("Bo")).toBeInTheDocument();
-});
-
-test("shows an error state when the request fails", async () => {
-  server.use(http.get("*/learners", () => HttpResponse.error()));
-  render(<MemoryRouter><LearnersPage /></MemoryRouter>);
-  // assert your error UI, e.g. await screen.findByText(/failed|error/i)
+test("issues the request and stores the session", async () => {
+  let received;
+  server.use(http.post("*/auth/login", async ({ request }) => {
+    received = await request.json();                       // assert the body that went out
+    return HttpResponse.json({ access_token: "t", refresh_token: "r" });
+  }));
+  render(<AuthView />);
+  // …fill and submit…
+  expect(received).toEqual({ email: "…", password: "…" });
 });
 ```
 
 Notes:
-- Wrap in `MemoryRouter` so navigation (`useNavigate`, `<Link>`) works; assert the URL or the
-  destination page after a click.
+- Wrap in `MemoryRouter` for views that use `useNavigate` / `<Link>`. `AuthView` doesn't —
+  `main.jsx` swaps it for `<Dashboard>` on `onAuthStateChange`, and `Dashboard` owns the router.
 - Use `findBy*` / `waitFor` for anything that appears after the fetch resolves.
+- Under Jest `process.env.VITE_API_URL` is unset, so `api.js` falls back to
+  `http://localhost:8000`. The `*` wildcards mean handlers match regardless.
+
+## Jest configuration this tier depends on
+
+Three things in `jest.config.cjs` exist for MSW; changing them will break these tests:
+
+1. **`testEnvironment: "jest-fixed-jsdom"`** — plain `jsdom` deletes Node's `fetch`,
+   `Request`/`Response`, streams and `BroadcastChannel`. MSW v2 needs them. This is a thin
+   wrapper that keeps them; everything else behaves like jsdom. (Polyfilling by hand with
+   `undici` was tried first and is a losing game — it wants an ever-growing list of globals.)
+2. **`transformIgnorePatterns`** — MSW and a few of its deps (`rettime`, `until-async`,
+   `@open-draft/*`) ship ESM only, and Jest skips `node_modules` when transforming. Only those
+   packages are whitelisted, so the rest of `node_modules` stays untransformed and fast.
+3. **`test/babelPluginImportMeta.cjs`** — rewrites Vite's `import.meta.env` so Jest can load
+   `src/lib/api.js` and `src/lib/supabase.js` at all. The previously configured
+   `babel-plugin-transform-import-meta` only ever handled `import.meta.url`, never `.env`;
+   nothing noticed because no test loaded those modules for real until this tier arrived.
 
 ## Running
 
-These live under `src/`, so `npm test` already discovers them (currently as `todo`). Once real,
-they run alongside unit tests. If you later want them isolated (separate MSW setup, own CI job),
-split them into a Jest **project** or add a `"test:integration"` script filtering
-`*.integration.test.jsx`.
+These live under `src/`, so `npm test` already discovers them. Run just this tier with
+`npx jest integration`.

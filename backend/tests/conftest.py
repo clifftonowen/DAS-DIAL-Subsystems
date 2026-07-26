@@ -56,21 +56,33 @@ def fake_supabase(monkeypatch):
     Returns a factory: call `make(seed={...})` to install a fake pre-loaded
     with rows and get the instance back for assertions. Patches every module
     that holds a `get_supabase` reference.
+
+    For UC6/UC8, `auth_users=[{"email", "password"}]` seeds the fake
+    Authentication Service and `confirm_email=True` models a project with email
+    confirmation switched on.
     """
     from tests.support.fake_supabase import FakeSupabase
     import app.core.supabase_client as sc
     import app.repositories.base as base
     import app.core.security as security
+    import app.gateways.auth_gateway as auth_gateway
 
     installed = {}
 
-    def make(seed=None, user_id="test-therapist-id"):
-        fake = FakeSupabase(seed=seed, user_id=user_id)
+    def make(seed=None, user_id="test-therapist-id", auth_users=None, confirm_email=False):
+        fake = FakeSupabase(seed=seed, user_id=user_id,
+                            auth_users=auth_users, confirm_email=confirm_email)
         getter = lambda: fake
         sc.get_supabase.cache_clear()          # drop any real cached client
+        sc.get_auth_supabase.cache_clear()
         monkeypatch.setattr(sc, "get_supabase", getter)      # source + lazy importers
+        monkeypatch.setattr(sc, "get_auth_supabase", getter)
         monkeypatch.setattr(base, "get_supabase", getter)    # BaseRepository.db
         monkeypatch.setattr(security, "get_supabase", getter)  # current_therapist
+        # AuthGateway binds the AUTH-plane client at import time. One FakeSupabase
+        # stands in for both planes; the split exists to stop a real sign-in from
+        # rewriting the real data client's service-role header.
+        monkeypatch.setattr(auth_gateway, "get_auth_supabase", getter)
         installed["fake"] = fake
         return fake
 

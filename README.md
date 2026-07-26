@@ -109,5 +109,10 @@ top of that file (they self-skip and stay green until you configure them).
 [`backend/tests/README.md`](backend/tests/README.md); frontend component (UI) tests are in
 [`frontend/test/README.md`](frontend/test/README.md).
 
+## Team workflow [OPTIONAL]
+See [`docs/collaboration.md`](docs/collaboration.md) — claim an Issue + open a
+draft PR before you start, and install GitLive so you can see who's editing which file in real time
+(avoids overlapping work and frontend merge conflicts).
+
 ## Status of each piece
 Search the code for `TODO:` — each marks a spot a team member owns (real JWT verify, ProfilingAlgorithm scoring, LangGraph wiring, embeddings, PDF render, OCR parsing). 

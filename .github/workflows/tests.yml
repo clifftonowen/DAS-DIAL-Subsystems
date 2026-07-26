@@ -14,6 +14,14 @@
 #   SUPABASE_ANON_KEY         anon key (frontend build)
 #   TEST_THERAPIST_EMAIL      a seeded therapist user in the test project
 #   TEST_THERAPIST_PASSWORD   that user's password
+#   TEST_LEARNER_ID           a learner id from infra/seed.sql, for UC2's e2e test.
+#                             Seed the project first — the learner must exist or the
+#                             FK on learner_profiles.learner_id fails.
+#
+# Test-project settings that are NOT secrets but the e2e/system tiers depend on:
+#   Authentication -> Providers -> Email -> "Confirm email" must be OFF. With it on,
+#   sign-up issues no session (so UC8's log-in half skips) and every attempt sends an
+#   email, which exhausts the default 2/hour quota and fails the sign-up outright.
 name: tests
 
 on:
@@ -83,6 +91,13 @@ jobs:
       SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
       TEST_THERAPIST_EMAIL: ${{ secrets.TEST_THERAPIST_EMAIL }}
       TEST_THERAPIST_PASSWORD: ${{ secrets.TEST_THERAPIST_PASSWORD }}
+      # A learner that exists in the test project, for UC2's profile-generation
+      # test. Without it that test self-skips and the job reports success having
+      # never exercised the use case, so check the -rs output below for skips.
+      # Seed the project (infra/seed.sql) BEFORE setting this secret: the learner
+      # must exist, or the FK on learner_profiles.learner_id fails and the test
+      # goes red instead of skipping.
+      TEST_LEARNER_ID: ${{ secrets.TEST_LEARNER_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -123,6 +138,13 @@ jobs:
 
       - name: Start backend (uvicorn)
         working-directory: backend
+        env:
+          # The browser loads the app from FRONTEND_URL and calls this API
+          # cross-origin, so that exact origin must be allowed — log-in goes through
+          # AuthController now, so a missing origin fails authentication with
+          # "Failed to fetch" rather than an HTTP error. Set explicitly rather than
+          # relying on the default in app/core/config.py.
+          CORS_ORIGINS: http://127.0.0.1:4173
         run: |
           nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
           for i in $(seq 1 30); do

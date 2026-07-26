@@ -1,4 +1,5 @@
 """Shared helpers for Selenium system tests (not a test module)."""
+import pytest
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -66,3 +67,18 @@ def feedback(driver, timeout=20):
 def is_signed_in(driver):
     """True when the authenticated shell rendered (the profile menu trigger)."""
     return bool(driver.find_elements(By.XPATH, "//button[contains(., 'My Profile')]"))
+
+
+def skip_if_rate_limited(role, text):
+    """Skip when the error on screen is Supabase's quota rather than a real refusal.
+
+    The browser counterpart of tests/e2e/_helpers.py::skip_if_rate_limited — see
+    that docstring for the causes and the real fix. Sign-up surfaces the quota as an
+    ordinary error alert, so without this a spent quota looks like a genuine failure.
+    """
+    if role == "alert" and "rate limit" in text.lower():
+        pytest.skip(
+            f"Supabase rejected sign-up on quota: {text!r}. Turn OFF 'Confirm email' "
+            "on the test project, or raise the limit under Authentication -> Rate "
+            "Limits. See tests/e2e/_helpers.py::skip_if_rate_limited."
+        )

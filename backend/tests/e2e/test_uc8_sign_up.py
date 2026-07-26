@@ -11,6 +11,8 @@ with a message naming the setting, rather than failing on a configuration issue.
 """
 import pytest
 
+from tests.e2e._helpers import skip_if_rate_limited
+
 pytestmark = pytest.mark.e2e
 
 PASSWORD = "Passw0rd!123"
@@ -23,6 +25,7 @@ def test_signup_creates_an_account_that_can_then_log_in(
     satisfies UC6's precondition."""
     resp = client.post("/auth/signup", json={"email": throwaway_email, "password": PASSWORD})
 
+    skip_if_rate_limited(resp)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["user_id"]
@@ -46,6 +49,7 @@ def test_signup_with_an_existing_email_is_rejected(
     """E2E-8.2: alternative flow — the second attempt is refused and no second
     mirror row appears."""
     first = client.post("/auth/signup", json={"email": throwaway_email, "password": PASSWORD})
+    skip_if_rate_limited(first)
     assert first.status_code == 200, first.text
     cleanup_users(first.json()["user_id"])
 

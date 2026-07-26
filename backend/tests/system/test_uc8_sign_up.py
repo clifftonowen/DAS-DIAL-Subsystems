@@ -15,7 +15,13 @@ pytest.importorskip("selenium")
 
 from selenium.webdriver.common.by import By
 
-from tests.system._helpers import feedback, is_signed_in, login, sign_up
+from tests.system._helpers import (
+    feedback,
+    is_signed_in,
+    login,
+    sign_up,
+    skip_if_rate_limited,
+)
 
 pytestmark = pytest.mark.system
 
@@ -31,6 +37,7 @@ def test_sign_up_creates_an_account_the_therapist_can_use(
     sign_up(driver, frontend_url, throwaway_email, PASSWORD)
     role, text = feedback(driver)
 
+    skip_if_rate_limited(role, text)
     assert role == "status", f"expected a success notice, got {role}: {text!r}"
     assert "successfully created" in text.lower()
 
@@ -53,7 +60,9 @@ def test_signing_up_twice_with_the_same_email_is_refused(
     cleanup_emails(throwaway_email)
 
     sign_up(driver, frontend_url, throwaway_email, PASSWORD)
-    assert feedback(driver)[0] == "status"
+    first_role, first_text = feedback(driver)
+    skip_if_rate_limited(first_role, first_text)
+    assert first_role == "status", f"expected a success notice, got {first_text!r}"
 
     sign_up(driver, frontend_url, throwaway_email, PASSWORD)
     role, text = feedback(driver)

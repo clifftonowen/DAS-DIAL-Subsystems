@@ -1,4 +1,12 @@
-"""ShareService - render an activity to PDF and email it to a therapist."""
+"""ShareService - render an activity to PDF and email it to a therapist.
+
+This is the flow of error handling before proceeding with sending 
+
+1. validate email address
+2. validate activity id and render the PDF
+3. hand the PDF and email address to gateway 
+
+"""
 from app.repositories.activity_repository import ActivityRepository
 from app.gateways.email_gateway import EmailGateway
 

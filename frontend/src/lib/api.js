@@ -54,6 +54,11 @@ export const getLearnerProfiles = (learnerId) => api(`/learners/${learnerId}/pro
 export const getLearnerAssessments = (learnerId) => api(`/learners/${learnerId}/assessments`);
 export const getProfileActivities = (profileId) => api(`/profiles/${profileId}/activities`);
 
+
+export const shareActivity = (activityId, recipientEmail) =>
+  api("/share", { method: "POST", body: JSON.stringify({ activity_id, recipient_email }) });
+
+
 // Dashboard endpoints
 export const getDashboardStats = () => api("/dashboard/stats");
 export const getDashboardTasks = () => api("/dashboard/tasks");

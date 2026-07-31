@@ -10,7 +10,8 @@ import Button from "../components/Button";
 import DeficiencyAlerts from "../components/DeficiencyAlerts";
 import ProfileRadarChart from "../components/ProfileRadarChart";
 import SkillBars from "../components/SkillBars";
-import { getLearner, getLearnerProfiles, generateProfile } from "../lib/api";
+import ShareWindow from "../components/ShareWindow";
+import { getLearner, getLearnerProfiles, generateProfile, getProfileActivities } from "../lib/api";
 
 export default function LearnerDetailPage() {
   const { id } = useParams();
@@ -21,6 +22,9 @@ export default function LearnerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [latestActivity, setLatestActivity] = useState(null);
+  const [isSharing, setIsSharing] = useState(false);
+
 
   async function loadData() {
     setLoading(true);
@@ -51,6 +55,8 @@ export default function LearnerDetailPage() {
           executive: (latestProfile.executive_functioning || 0) * 100,
           visualisation: (latestProfile.visualisation || 0) * 100,
         });
+      const activities = await getProfileActivities(latestProfile.id);
+      setLatestActivity(activities?.[0] ?? null);
       }
     } catch (err) {
       console.error("Failed to load learner details", err);
@@ -134,7 +140,11 @@ export default function LearnerDetailPage() {
             {isGenerating ? "Generating..." : "Generate Profile"}
           </Button>
           <Button variant="secondary" onClick={() => navigate("/generate")}>Generate Activity</Button>
-          <Button variant="ghost">Share</Button>
+          <Button variant="ghost" onClick={() => setIsSharing(true)} disabled={!latestActivity}
+            title={latestActivity 
+            ? "Email this learner's latest activity as a PDF"
+            : "No activity for this learner"}>Share
+          </Button>
         </div>
       </div>
 
@@ -165,6 +175,13 @@ export default function LearnerDetailPage() {
           <h3 className="text-lg font-medium text-brand-fg">No cognitive profile yet</h3>
           <p className="mt-2 text-sm text-brand-fg-muted">Click "Generate Profile" to run the profiling algorithm against this learner's assessment history.</p>
         </div>
+      )}
+      {isSharing && latestActivity && (
+        <ShareWindow activityId={latestActivity.id} activityName={latestActivity.literacy_objective
+            ? `"${latestActivity.literacy_objective}"`
+            : `the latest activity for ${student.name}`}
+          onClose={() => setIsSharing(false)}
+        />
       )}
     </div>
   );

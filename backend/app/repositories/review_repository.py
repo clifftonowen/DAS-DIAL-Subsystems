@@ -8,4 +8,4 @@ class ReviewRepository(BaseRepository):
         return self.db.upsert(review).execute().data
 
     def find_by_activity(self, activity_id: str) -> list[dict]:
-        return self.db.select("*").eq("activity_id", activity_id).execute().data
+        return self.db.select("*").eq("activity_id", activity_id).order("created_at", desc=True).execute().data

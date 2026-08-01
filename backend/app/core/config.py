@@ -44,5 +44,14 @@ class Settings(BaseSettings):
         "http://localhost:4173,http://127.0.0.1:4173"
     )
 
+    #smtp for email 
+    email_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+
 
 settings = Settings()

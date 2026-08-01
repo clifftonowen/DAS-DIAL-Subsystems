@@ -15,6 +15,7 @@ class ReviewService:
         try:
             stored = self.reviews.save(review)[0]
         except Exception as exc:
+            print("REVIEW SAVE FAILED:", repr(exc)) 
             raise StorageError("Review could not be saved") from exc
  
         if status:

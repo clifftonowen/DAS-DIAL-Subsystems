@@ -52,6 +52,7 @@ class GenerationParams(BaseModel):
 class ReviewIn(BaseModel):
     activity_id: str
     text: str
+    status: str | None = None
 
 
 class ShareIn(BaseModel):

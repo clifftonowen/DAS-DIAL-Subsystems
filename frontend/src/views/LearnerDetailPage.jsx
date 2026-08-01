@@ -140,11 +140,7 @@ export default function LearnerDetailPage() {
             {isGenerating ? "Generating..." : "Generate Profile"}
           </Button>
           <Button variant="secondary" onClick={() => navigate("/generate")}>Generate Activity</Button>
-          <Button variant="ghost" onClick={() => setIsSharing(true)} disabled={!latestActivity}
-            title={latestActivity 
-            ? "Email this learner's latest activity as a PDF"
-            : "No activity for this learner"}>Share
-          </Button>
+          <Button variant="secondary" onClick={() => setIsSharing(true)} disabled={!latestActivity}>Share</Button>
         </div>
       </div>
 

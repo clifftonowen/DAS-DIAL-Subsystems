@@ -13,3 +13,8 @@ class ActivityRepository(BaseRepository):
 
     def find_by_profile(self, profile_id: str) -> list[dict]:
         return self.db.select("*").eq("profiled", profile_id).order("created_at", desc=True).execute().data
+
+    def set_status(self, activity_id: str, status: str) -> dict | None:
+        rows = self.db.update({"status": status}).eq("id", activity_id).execute().data
+        return rows[0] if rows else None
+

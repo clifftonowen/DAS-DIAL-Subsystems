@@ -57,8 +57,9 @@ export const getProfileActivities = (profileId) => api(`/profiles/${profileId}/a
 export const shareActivity = (activityId, recipientEmail) =>
   api("/share", { method: "POST", body: JSON.stringify({ activity_id : activityId, recipient_email:recipientEmail }) });
 export const submitReview = (activityId, text) =>
-  api("/reviews", { method: "POST", body: JSON.stringify({ activity_id: activityId, text }) });
+  api("/reviews", { method: "POST", body: JSON.stringify({ activity_id: activityId, text, status }) });
 export const getReviews = (activityId) => api(`/reviews/${activityId}`);
+
 
 
 // Dashboard endpoints

@@ -11,6 +11,8 @@ import DeficiencyAlerts from "../components/DeficiencyAlerts";
 import ProfileRadarChart from "../components/ProfileRadarChart";
 import SkillBars from "../components/SkillBars";
 import ShareWindow from "../components/ShareWindow";
+import ActivityReviewPanel from "../components/ActivityReviewPanel";
+import ReviewSection from "../components/ReviewSection";
 import { getLearner, getLearnerProfiles, generateProfile, getProfileActivities } from "../lib/api";
 
 export default function LearnerDetailPage() {
@@ -172,6 +174,26 @@ export default function LearnerDetailPage() {
           <p className="mt-2 text-sm text-brand-fg-muted">Click "Generate Profile" to run the profiling algorithm against this learner's assessment history.</p>
         </div>
       )}
+
+      {/* last activity and its reviews */}
+      {latestActivity && (
+        <>
+          <h2 className="mb-3 mt-8 text-[15px] font-semibold text-brand-fg">Activity & Review</h2>
+          <div className="space-y-4">
+            <ActivityReviewPanel activity={latestActivity} />
+            <ReviewSection
+              activityId={latestActivity.id}
+              initialStatus={latestActivity.status}
+              // Keep the badge above in step with the verdict just submitted,
+              // rather than reloading the whole page for one field.
+              onStatusChange={(status) =>
+                setLatestActivity((prev) => (prev ? { ...prev, status } : prev))
+              }
+            />
+          </div>
+        </>
+      )}
+
       {isSharing && latestActivity && (
         <ShareWindow activityId={latestActivity.id} activityName={latestActivity.literacy_objective
             ? `"${latestActivity.literacy_objective}"`

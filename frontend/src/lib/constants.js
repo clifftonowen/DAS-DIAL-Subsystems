@@ -21,28 +21,42 @@ export const SKILL_COLORS = {
   visualisation: '#F97316',  // chart-7
 };
 
-// ── Literacy skills — the cohort scatter in Graph.jsx ────────────────────────
-// A different taxonomy from SKILL_LABELS above: those are the seven cognitive
-// constructs shown for one learner, these are the six literacy skills compared
-// across the whole cohort.
+// ── Plottable axes — the cohort scatter in Graph.jsx ─────────────────────────
+// THE SINGLE SWAP POINT. Graph.jsx hardcodes no skill names at all: the dropdowns,
+// the default axes and the row-building loop are all generated from this map, so
+// changing it changes the whole UI.
 //
-// `field` is the learner_profiles column each skill currently reads from. It is a
-// PLACEHOLDER — Supabase has no phonics/reading/*_writing columns yet, so each skill
-// borrows a cognitive construct to have real data to plot. When the six real columns
-// land, change `field` here and nothing else moves.
+// TODAY these are the seven cognitive constructs that actually exist as columns on
+// learner_profiles, labelled as what they are. The target taxonomy is the six
+// literacy skills (phonics, reading, spelling, narrative / exposition / persuasive
+// writing), but those columns do not exist in Supabase yet, and mapping them onto
+// the constructs would mean inventing three relationships that have no basis —
+// "Persuasive Writing" would really be plotting working_memory. That is the trap
+// backend/app/ingestion/constants.py warns about at CONCEPT_TO_CONSTRUCTS:
+// "Do NOT invent mappings — an empty array is more honest than a wrong one."
 //
-// No colour per skill on purpose: skills are continuous, so they live on the axes and
-// are named by the dropdown labels. Colour is reserved for clusters, below.
-export const LITERACY_SKILLS = {
-  phonics:            { label: 'Phonics',             field: 'decoding' },
-  reading:            { label: 'Reading',             field: 'comprehension' },
-  spelling:           { label: 'Spelling',            field: 'spelling' },
-  narrative_writing:  { label: 'Narrative Writing',   field: 'visualisation' },
-  exposition_writing: { label: 'Exposition Writing',  field: 'executive_functioning' },
-  persuasive_writing: { label: 'Persuasive Writing',  field: 'working_memory' },
+// WHEN THE REAL COLUMNS LAND: replace the seven entries below with the six skills,
+// each `field` naming its new column. Nothing else in the codebase changes.
+//
+// `label` overlaps with SKILL_LABELS above for now, deliberately duplicated rather
+// than shared — the two diverge completely at the swap, and SKILL_LABELS is keyed by
+// the frontend's camelCase names (`workingMemory`) while these are keyed by the DB
+// column names.
+//
+// No colour per entry, on purpose: these are continuous, so they live on the axes
+// and are named by the dropdown labels. Colour is reserved for clusters, below.
+export const PLOT_SKILLS = {
+  phonological_processing: { label: 'Phonological Processing', field: 'phonological_processing' },
+  decoding:                { label: 'Decoding',                field: 'decoding' },
+  spelling:                { label: 'Spelling',                field: 'spelling' },
+  comprehension:           { label: 'Comprehension',           field: 'comprehension' },
+  working_memory:          { label: 'Working Memory',          field: 'working_memory' },
+  executive_functioning:   { label: 'Executive Functioning',   field: 'executive_functioning' },
+  visualisation:           { label: 'Visualisation',           field: 'visualisation' },
 };
 
-export const SKILL_KEYS = Object.keys(LITERACY_SKILLS);
+// Dropdown order, and the source of Graph.jsx's default X/Y/Z (the first three).
+export const SKILL_KEYS = Object.keys(PLOT_SKILLS);
 
 // ── Clusters — the scatter's legend ──────────────────────────────────────────
 // Indexed by position rather than keyed by name: the backend picks k automatically

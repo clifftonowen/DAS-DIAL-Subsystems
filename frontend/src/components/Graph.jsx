@@ -1,7 +1,12 @@
 // Graph.jsx — Cohort skills scatter for the main dashboard.
 //
 // Every learner is one point in a rotatable 3D scatter: the three dropdowns pick
-// which literacy skill sits on X, Y and Z. Points are coloured by cluster, the
+// which skill sits on X, Y and Z. No skill is named anywhere in this file — the
+// dropdown options, the default axes and the row-building loop are all generated
+// from constants.PLOT_SKILLS, so re-pointing that map at the six literacy-skill
+// columns (once they exist in Supabase) changes this UI without touching it.
+//
+// Points are coloured by cluster, the
 // legend lists those clusters, and clicking a legend chip opens the Table of that
 // cluster's learners.
 //
@@ -26,7 +31,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import Card from "./Card";
 import Table from "./Table";
 import { listLearners, getLearnerProfiles } from "../lib/api";
-import { LITERACY_SKILLS, SKILL_KEYS, clusterColor, clusterFor } from "../lib/constants";
+import { PLOT_SKILLS, SKILL_KEYS, clusterColor, clusterFor } from "../lib/constants";
 
 const AXES = [
   { key: "x", label: "X axis" },
@@ -36,10 +41,20 @@ const AXES = [
 
 const AXIS_FONT = { color: "#6B727D", size: 11, family: "Poppins, system-ui, sans-serif" };
 
-const skillLabel = (key) => LITERACY_SKILLS[key]?.label ?? key;
+const skillLabel = (key) => PLOT_SKILLS[key]?.label ?? key;
 
-export default function Graph() {
-  const [axes, setAxes] = useState({ x: "phonics", y: "reading", z: "spelling" });
+// Props:
+//   onSelectLearner {function} called with a row when a name in the cluster table
+//     is clicked. Graph does not open the profile itself — MainPage owns that, so
+//     this component never imports a view.
+export default function Graph({ onSelectLearner }) {
+  // Derived from PLOT_SKILLS rather than named literally, so swapping that map for
+  // the six literacy skills needs no edit here.
+  const [axes, setAxes] = useState(() => ({
+    x: SKILL_KEYS[0],
+    y: SKILL_KEYS[1],
+    z: SKILL_KEYS[2],
+  }));
   const [rows, setRows] = useState([]);
   const [skipped, setSkipped] = useState(0);
   const [activeCluster, setActiveCluster] = useState(null);
@@ -78,7 +93,7 @@ export default function Graph() {
           };
           // Scores are stored 0–1; the axes run 0–100.
           SKILL_KEYS.forEach((key) => {
-            row[key] = Math.round((latest[LITERACY_SKILLS[key].field] || 0) * 100);
+            row[key] = Math.round((latest[PLOT_SKILLS[key].field] || 0) * 100);
           });
           built.push(row);
         });
@@ -128,7 +143,7 @@ export default function Graph() {
                   // Already plotted on one of the other two axes.
                   disabled={skill !== axes[key] && Object.values(axes).includes(skill)}
                 >
-                  {LITERACY_SKILLS[skill].label}
+                  {PLOT_SKILLS[skill].label}
                 </option>
               ))}
             </select>
@@ -195,6 +210,7 @@ export default function Graph() {
               rows={rows.filter((r) => r.cluster === activeCluster)}
               cluster={activeCluster}
               axes={axes}
+              onSelect={onSelectLearner}
             />
           )}
         </>

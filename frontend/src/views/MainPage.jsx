@@ -14,7 +14,9 @@ import StatCard from "../components/StatCard";
 import Calendar from "../components/Calendar";
 import TaskList from "../components/TaskList";
 import { getDashboardStats, getDashboardTasks, getDashboardEvents } from "../lib/api";
-import Graph from "../components/Graph"
+import Graph from "../components/Graph";
+import Modal from "../components/Modal";
+import LearnerDetailPage from "./LearnerDetailPage";
 
 // Alerts row above the calendar — one entry per card, each driven by a key on the
 // /dashboard/stats response. Add a card by adding a row here; no new component needed.
@@ -33,6 +35,9 @@ export default function MainPage() {
   const [tasks, setTasks] = useState({ today: [], upcoming: [] });
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Learner row picked from the cohort graph's cluster table, shown in an overlay.
+  // Owned here rather than in Graph so that component stays free of view imports.
+  const [selectedLearner, setSelectedLearner] = useState(null);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -113,10 +118,25 @@ export default function MainPage() {
         </div>
       </div>
 
+      {/* ── Cohort skills comparison ── */}
       <div>
-        <Graph></Graph>
+        <h2 className="mb-3 text-[15px] font-semibold text-brand-fg">
+          Cohort Skills Comparison
+        </h2>
+        <Graph onSelectLearner={setSelectedLearner} />
       </div>
-      
+
+      {/* Same LearnerDetailPage the Learners tab routes to, handed an id instead of
+          reading one from the URL. Closing returns to the graph with its selected
+          cluster and camera angle intact. */}
+      {selectedLearner && (
+        <Modal onClose={() => setSelectedLearner(null)}>
+          <LearnerDetailPage
+            learnerId={selectedLearner.id}
+            onBack={() => setSelectedLearner(null)}
+          />
+        </Modal>
+      )}
     </div>
   );
 }

@@ -83,7 +83,10 @@ export default function MainPage() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-[18px]">
+    // No h-full: this column is taller than the viewport, and h-full would let
+    // flex-shrink compress every child to fit (clipping the hero, which is
+    // overflow-hidden). The <main> in Dashboard.jsx already scrolls.
+    <div className="flex flex-col gap-[18px]">
       {/* ── Welcome banner ── */}
       <HeroBanner dateLabel={`Today, ${todayLabel}`} onStartReview={() => navigate("/learners")} />
 

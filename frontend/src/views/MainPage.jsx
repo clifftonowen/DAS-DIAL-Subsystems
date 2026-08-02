@@ -14,6 +14,7 @@ import StatCard from "../components/StatCard";
 import Calendar from "../components/Calendar";
 import TaskList from "../components/TaskList";
 import { getDashboardStats, getDashboardTasks, getDashboardEvents } from "../lib/api";
+import Graph from "../components/Graph"
 
 // Alerts row above the calendar — one entry per card, each driven by a key on the
 // /dashboard/stats response. Add a card by adding a row here; no new component needed.
@@ -111,6 +112,11 @@ export default function MainPage() {
           <TaskList title="Upcoming"      tasks={tasks.upcoming} />
         </div>
       </div>
+
+      <div>
+        <Graph></Graph>
+      </div>
+      
     </div>
   );
 }

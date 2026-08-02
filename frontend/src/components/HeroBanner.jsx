@@ -11,16 +11,20 @@
 
 export default function HeroBanner({ dateLabel, onStartReview }) {
   return (
-    <div className="relative flex items-center justify-between overflow-hidden
+    // shrink-0: the banner is overflow-hidden, so if a flex parent ever compresses
+    // it the content is clipped rather than scrolled. It sizes to its content.
+    <div className="relative flex shrink-0 items-center justify-between gap-6 overflow-hidden
                     rounded-[20px] bg-brand-hero-bg px-[30px] py-[26px] text-brand-hero-text">
 
       {/* ── Text block ── */}
-      <div className="relative z-[2]">
+      {/* min-w-0 lets this shrink below its content width instead of pushing the
+          circles out of the rounded corner on narrow viewports. */}
+      <div className="relative z-[2] min-w-0">
         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] opacity-[0.72]">
           {dateLabel}
         </p>
         <p className="text-[17px] font-medium opacity-90">Welcome back to your</p>
-        <h1 className="mb-4 mt-0.5 text-[34px] font-extrabold leading-[1.05] tracking-[-0.02em]">
+        <h1 className="mb-4 mt-0.5 text-[28px] font-extrabold leading-[1.05] tracking-[-0.02em] sm:text-[34px]">
           Daily dashboard
         </h1>
         <button
@@ -33,7 +37,9 @@ export default function HeroBanner({ dateLabel, onStartReview }) {
       </div>
 
       {/* ── Decorative circle cluster, right side ── */}
-      <div aria-hidden="true" className="relative z-[2] flex items-center gap-3.5 pr-3">
+      {/* Purely decorative and fixed-size, so it is dropped rather than allowed to
+          crowd the text on narrow viewports. */}
+      <div aria-hidden="true" className="relative z-[2] hidden shrink-0 items-center gap-3.5 pr-3 sm:flex">
         <span className="h-16 w-16 rounded-full bg-brand-hero-accent opacity-90" />
         <span className="h-24 w-24 rounded-full bg-brand-primary opacity-[0.14]" />
       </div>

@@ -1,8 +1,17 @@
 // LearnerDetailPage.jsx — Detailed view for a specific learner.
-// Rendered at route "/learners/:id" inside the Dashboard shell.
+//
+// Used two ways, from one copy of the code:
+//   - as the route "/learners/:id" inside the Dashboard shell (the Learners tab)
+//   - inside a Modal on MainPage, opened from the cohort graph's cluster table
 //
 // Displays the learner's profile header, deficiency alerts, radar chart,
-// and skill progress bars. Data is hardcoded for the prototype.
+// and skill progress bars.
+//
+// Props — both optional, and both undefined when this is used as a route, so the
+// routed behaviour is unchanged:
+//   learnerId {string}   which learner to show, when the URL carries no :id
+//   onBack    {function} replaces the back-to-learners navigation, so the embedded
+//                        copy closes its overlay instead of navigating away
 
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -15,10 +24,16 @@ import ActivityReviewPanel from "../components/ActivityReviewPanel";
 import ReviewSection from "../components/ReviewSection";
 import { getLearner, getLearnerProfiles, generateProfile, getProfileActivities } from "../lib/api";
 
-export default function LearnerDetailPage() {
-  const { id } = useParams();
+export default function LearnerDetailPage({ learnerId, onBack }) {
+  const { id: routeId } = useParams();
   const navigate = useNavigate();
-  
+
+  // Prop wins when embedded; the route param is the only source when routed. The
+  // merged value keeps the name `id`, so nothing downstream changes.
+  const id = learnerId ?? routeId;
+  const goBack = onBack ?? (() => navigate("/learners"));
+  const backLabel = onBack ? "← Close" : "← Back to Learners";
+
   const [student, setStudent] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -96,8 +111,8 @@ export default function LearnerDetailPage() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-brand-fg-muted">Learner not found or failed to load: {error}</p>
-        <Button variant="secondary" onClick={() => navigate("/learners")}>
-          ← Back to Learners
+        <Button variant="secondary" onClick={goBack}>
+          {backLabel}
         </Button>
       </div>
     );
@@ -108,9 +123,9 @@ export default function LearnerDetailPage() {
       {/* ── Back Navigation ── */}
       <button 
         className="mb-5 text-sm font-medium text-brand-fg-muted hover:text-brand-fg transition-colors"
-        onClick={() => navigate("/learners")}
+        onClick={goBack}
       >
-        ← Back to Learners
+        {backLabel}
       </button>
 
       {/* ── Header ── */}

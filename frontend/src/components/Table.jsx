@@ -6,7 +6,11 @@
 //
 // Columns follow the three axes currently on the plot, so the table always
 // explains the picture above it. Nothing here names a skill — labels come from
-// PLOT_SKILLS, so this survives the swap to the six literacy-skill columns.
+// PLOT_SKILLS.
+//
+// A cluster can hold well over a thousand learners, so the body is capped at LIMIT
+// rows and the caption says so. Rendering 1,300 <tr>s to a panel nobody scrolls to
+// the bottom of costs a visible pause on every legend click.
 //
 // Props:
 //   rows     {Array}    learner rows for one cluster (see Graph.jsx for the shape)
@@ -18,6 +22,13 @@ import { PLOT_SKILLS } from "../lib/constants";
 
 const HEAD = "px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-brand-fg-muted";
 
+const LIMIT = 100;
+
+// "narrative_writing" -> "Narrative". Which genre a learner sat is only meaningful while
+// Writing is on an axis, so the column appears with it.
+const genreLabel = (genre) =>
+  genre ? genre.replace(/_writing$/, "").replace(/^./, (c) => c.toUpperCase()) : "—";
+
 export default function Table({ rows, cluster, axes, onSelect }) {
   if (!rows.length) {
     return (
@@ -28,17 +39,27 @@ export default function Table({ rows, cluster, axes, onSelect }) {
   }
 
   const columns = [axes.x, axes.y, axes.z];
-  // Sorted by the X-axis skill so the table reads as a ranking rather than an
-  // arbitrary list. Copied first — rows belongs to Graph.
-  const sorted = [...rows].sort((a, b) => b[axes.x] - a[axes.x]);
+  const showGenre = columns.includes("writing");
+
+  // Sorted by the X-axis skill so the table reads as a ranking rather than an arbitrary list.
+  // Copied first — rows belongs to Graph. A learner not assessed on that skill sorts last:
+  // `null - 5` is NaN, and a comparator returning NaN leaves the order undefined.
+  const sorted = [...rows].sort((a, b) => {
+    const [x, y] = [a[axes.x], b[axes.x]];
+    if (x == null) return y == null ? 0 : 1;
+    if (y == null) return -1;
+    return y - x;
+  });
+  const shown = sorted.slice(0, LIMIT);
 
   return (
     <div className="overflow-hidden rounded-xl border border-brand-border">
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3">
         <h3 className="text-sm font-semibold text-brand-fg">{cluster}</h3>
         <p className="text-xs text-brand-fg-muted">
-          {rows.length} learner{rows.length === 1 ? "" : "s"} · sorted by{" "}
-          {PLOT_SKILLS[axes.x].label} · click a name for their profile
+          {rows.length.toLocaleString()} learner{rows.length === 1 ? "" : "s"}
+          {shown.length < sorted.length && ` · top ${LIMIT} shown`} · sorted by{" "}
+          {PLOT_SKILLS[axes.x].label}
         </p>
       </div>
 
@@ -49,6 +70,7 @@ export default function Table({ rows, cluster, axes, onSelect }) {
               <th scope="col" className={`${HEAD} w-12 text-left`}>#</th>
               <th scope="col" className={`${HEAD} text-left`}>Learner</th>
               <th scope="col" className={`${HEAD} text-left`}>Band</th>
+              {showGenre && <th scope="col" className={`${HEAD} text-left`}>Genre</th>}
               {columns.map((key) => (
                 <th key={key} scope="col" className={`${HEAD} text-right`}>
                   {PLOT_SKILLS[key].label}
@@ -57,25 +79,36 @@ export default function Table({ rows, cluster, axes, onSelect }) {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row, i) => (
+            {shown.map((row, i) => (
               <tr
                 key={row.id}
                 className="border-b border-brand-border last:border-b-0 hover:bg-brand-muted"
               >
                 <td className="px-4 py-2.5 text-brand-fg-muted tabular-nums">{i + 1}</td>
                 <td className="px-4 py-2.5">
-                  <button
-                    type="button"
-                    onClick={() => onSelect(row)}
-                    className="rounded font-medium text-brand-fg underline decoration-brand-border underline-offset-4 transition-colors hover:text-brand-primary hover:decoration-brand-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-ring/40"
-                  >
-                    {row.name}
-                  </button>
+                  {/* Only learners who are also on the therapist's caseload have a profile to
+                      open — GET /learners/{id} would 404 for a cohort-only student, so those
+                      names are plain text rather than a button that leads to an error. */}
+                  {row.learnerId ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelect(row)}
+                      className="rounded font-medium text-brand-fg underline decoration-brand-border underline-offset-4 transition-colors hover:text-brand-primary hover:decoration-brand-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-ring/40"
+                    >
+                      {row.name}
+                    </button>
+                  ) : (
+                    <span className="font-medium text-brand-fg">{row.name}</span>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-brand-fg-muted">{row.bandLevel}</td>
+                {showGenre && (
+                  <td className="px-4 py-2.5 text-brand-fg-muted">{genreLabel(row.writingGenre)}</td>
+                )}
                 {columns.map((key) => (
                   <td key={key} className="px-4 py-2.5 text-right font-medium text-brand-fg tabular-nums">
-                    {row[key]}
+                    {/* Null means not assessed on this skill, which is not the same as zero. */}
+                    {row[key] ?? <span className="text-brand-fg-muted">—</span>}
                   </td>
                 ))}
               </tr>

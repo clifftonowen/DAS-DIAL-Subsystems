@@ -131,11 +131,16 @@ export default function MainPage() {
 
       {/* Same LearnerDetailPage the Learners tab routes to, handed an id instead of
           reading one from the URL. Closing returns to the graph with its selected
-          cluster and camera angle intact. */}
-      {selectedLearner && (
+          cluster and camera angle intact.
+
+          `learnerId` is the caseload uuid, NOT the row's `id` — the graph plots the
+          anonymised research cohort, whose ids ("Student 0001") mean nothing to
+          /learners/{id}. Table only makes a row clickable when this is set, so the
+          guard here is belt-and-braces. */}
+      {selectedLearner?.learnerId && (
         <Modal onClose={() => setSelectedLearner(null)}>
           <LearnerDetailPage
-            learnerId={selectedLearner.id}
+            learnerId={selectedLearner.learnerId}
             onBack={() => setSelectedLearner(null)}
           />
         </Modal>

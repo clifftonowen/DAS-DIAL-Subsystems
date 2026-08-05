@@ -40,9 +40,30 @@ DIMENSION_KEYWORDS: dict[str, tuple[str, ...]] = {
 NEUTRAL = 0.5  # used for a dimension no assessment task evidences
 
 
+class NoPatternError(Exception):
+    """The records evidenced nothing at all, so there is no profile to build.
+
+    The `NoPatternError` branch of the UC2 sequence diagram (UT-2.9, IT-2.6, ST-2.3).
+
+    Raised only when NOT ONE dimension could be scored — no records, every task name
+    unrecognised, or every task unscorable. A partially-evidenced set is not an error:
+    the dimensions that were evidenced keep their scores and the rest sit at NEUTRAL,
+    which is the point of NEUTRAL.
+
+    The distinction matters clinically. "We scored three of seven dimensions" is a usable
+    profile a therapist can act on; "we scored none" is a seven-way NEUTRAL reading that
+    looks like a real result and is not — every dimension would render at exactly 50% on
+    the radar chart, which is a statement about our parser, not about the learner.
+    """
+
+
 class ProfilingAlgorithm:
     def analyse(self, records: list[dict]) -> dict:
-        """records -> ProfileMetrics (the seven cognitive dimensions), each 0.0-1.0."""
+        """records -> ProfileMetrics (the seven cognitive dimensions), each 0.0-1.0.
+
+        Raises NoPatternError when no dimension could be scored at all — see that class
+        for why a fully-NEUTRAL result is refused rather than returned.
+        """
         scores: dict[str, float] = {}
 
         for record in self._newest_first(records or []):
@@ -51,6 +72,11 @@ class ProfilingAlgorithm:
                 # records only fill dimensions still unscored.
                 if dimension not in scores and ratios:
                     scores[dimension] = round(sum(ratios) / len(ratios), 4)
+
+        if not scores:
+            raise NoPatternError(
+                f"No profile dimension could be scored from {len(records or [])} record(s)."
+            )
 
         return {dim: scores.get(dim, NEUTRAL) for dim in DIMENSIONS}
 

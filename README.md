@@ -28,7 +28,8 @@ backend/app/
   entities/      # domain models
   core/          # config, supabase client, auth dependency
 frontend/src/    # AuthView, Dashboard, UploadView + api/supabase clients
-infra/           # schema.sql (Supabase), docker-compose
+infra/           # schema.sql (Supabase), migrations/, docker-compose
+notebooks/       # cohort clustering analysis (Subsystem 2) — see Setup step 4
 ```
 
 ## Setup
@@ -54,6 +55,43 @@ cp .env.example .env      # fill in Supabase URL + anon key + API url
 npm install
 npm run dev               # http://localhost:5173
 ```
+
+### 4. Cohort clustering (Subsystem 2, UC2) — optional
+Populates the dashboard's 3D cohort scatter from `DIAL_Anonymised_Data.xlsx` (gitignored;
+place it at the repo root). Without this step the scatter shows its empty state and
+everything else works normally.
+
+```bash
+pip install -r backend/requirements-analysis.txt   # pandas + openpyxl, ingest only
+cd backend
+python -m scripts.ingest_dial_data --dry-run       # audit + fitted models, writes nothing
+python -m scripts.ingest_dial_data                 # needs the Supabase .env
+```
+
+`--dry-run` prints per-feature coverage, re-checks the data assumptions the feature
+selection rests on, and shows each band model's silhouette sweep, chosen k and centroids.
+Run it first — it needs no secrets, and the audit is how you notice a new workbook has
+broken an assumption.
+
+**How it works.** `ProfilingAlgorithm.cluster()` standardises the literacy scores, sweeps
+k = 2…10, and keeps the k with the best silhouette. The ingest fits it **twice**:
+
+| Scope | Models | Column | Result |
+|-------|--------|--------|--------|
+| cohort | one, over all 5,783 | `cluster_cohort` | k=4, silhouette 0.365 |
+| band | one per band group A/B/C, each its own k | `cluster_band` | k=5/4/2, silhouette 0.43/0.42/0.34 |
+
+The band models score better because the assessment papers differ by band — phonics tops out
+at 25 in A1, 30 in A2 and 46 in A3 — so a single cohort-wide fit partly recovers which paper a
+student sat rather than how they are doing (its high-phonics cluster is 56.8% band A3). Both
+are stored so the dashboard can toggle between them and show the comparison; the scatter opens
+on the cohort model and its band filter works in either scope. The API serves the labels as a
+plain SELECT — no model is fitted on the request path.
+
+The evidence behind every one of those choices — including why `FluencyMark` and the three
+separate writing-genre columns are excluded — is worked through in
+[`notebooks/subsystem2_clustering.ipynb`](notebooks/subsystem2_clustering.ipynb), which
+imports the same modules the ingest script uses so the two cannot drift.
 
 ## Testing
 

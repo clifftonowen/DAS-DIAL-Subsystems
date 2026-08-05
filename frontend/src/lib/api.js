@@ -67,6 +67,11 @@ export const getDashboardStats = () => api("/dashboard/stats");
 export const getDashboardTasks = () => api("/dashboard/tasks");
 export const getDashboardEvents = () => api("/dashboard/events");
 
+// The whole clustered cohort in one call — every learner's literacy scores plus the k-means
+// label already assigned to them, and one `runs` entry per band model describing how its k was
+// chosen. Resolves to { learners: [...], runs: [...], unclustered: n }. See Graph.jsx.
+export const getCohortClusters = () => api("/dashboard/clusters");
+
 
 async function apiForm(path, formData) {
   const headers = await authHeader();

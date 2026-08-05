@@ -40,6 +40,59 @@ create table if not exists learner_profiles (
   created_at timestamptz default now()
 );
 
+-- ============================================================
+-- Subsystem 2: the anonymised DAS research cohort + its k-means clusters.
+-- Distinct from `learners` (the therapist's own caseload) — see
+-- infra/migrations/2026-08-05_learner_scores.sql for the full rationale on every column.
+-- Loaded by `python -m scripts.ingest_dial_data` from backend/.
+-- ============================================================
+create table if not exists learner_scores (
+  student_id   text primary key,          -- anonymised, e.g. 'Student 0001'
+  learner_id   uuid references learners(id) on delete set null,
+  semester     text not null,             -- the most recent sitting on record
+  band         text,                      -- NewBand: A1..C9
+  band_group   text,                      -- 'A' | 'B' | 'C' — the clustering scope
+  school_level text,
+  age          int,
+  phonics               real,             -- \
+  word_reading_accuracy real,             --  > the clustering features
+  word_spelling         real,             -- /
+  writing            real,                -- plottable, not clustered (absent for band A)
+  writing_genre      text,
+  narrative_writing  real,                -- \
+  exposition_writing real,                --  > mutually exclusive; provenance for `writing`
+  persuasive_writing real,                -- /
+  fluency_mark real,                      -- = 2 x word_reading_accuracy; never clustered
+
+  -- TWO clustering scopes, stored side by side so the dashboard can toggle between them.
+  --   cluster_band    '<band_group> <rank>', e.g. 'B 2' — one model per band group
+  --   cluster_cohort  'Cohort <rank>'        — one model over everyone
+  -- Different populations: every learner gets a cluster_cohort, but the 3 whose band is
+  -- missing fall below MIN_GROUP and get no cluster_band.
+  cluster_band   text,
+  cluster_cohort text,
+  updated_at timestamptz default now()
+);
+create index if not exists idx_learner_scores_cluster_band   on learner_scores (cluster_band);
+create index if not exists idx_learner_scores_cluster_cohort on learner_scores (cluster_cohort);
+create index if not exists idx_learner_scores_band           on learner_scores (band_group);
+
+-- One row per k-means fit — the cohort model plus one per band group — so the dashboard can
+-- show how each k was chosen and compare the two scopes.
+create table if not exists clustering_runs (
+  id              uuid primary key default gen_random_uuid(),
+  scope           text not null default 'band',  -- 'cohort' | 'band'
+  tier            text not null,          -- 'Cohort', or the band group this model was fitted on
+  features        text[] not null,
+  k               int not null,           -- chosen by best silhouette, not configured
+  best_silhouette real not null,
+  silhouette_by_k jsonb not null,         -- the whole k = 2..10 sweep
+  n_learners      int not null,
+  created_at      timestamptz default now()
+);
+create index if not exists idx_clustering_runs_scope
+  on clustering_runs (scope, tier, created_at desc);
+
 -- RAG corpus: ELL-MLP teaching resources embedded for retrieval
 create table if not exists instructional_strategies (
   id uuid primary key default gen_random_uuid(),

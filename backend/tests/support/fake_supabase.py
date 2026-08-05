@@ -13,8 +13,11 @@ required.
 
 Supported chain methods: table, select, insert, upsert, update, delete,
 eq, neq, gt, gte, lt, lte, order, limit, range, single, execute.
-Unsupported filters simply pass through (they don't narrow results), which
-keeps the double small; extend here if a repository needs more precision.
+`eq`, `gt`, `order` and `range` are modelled for real; the remaining filters pass
+through (they don't narrow results), which keeps the double small — extend here if a
+repository needs more precision. `neq` in particular does NOT narrow, so a delete
+filtered only by `neq` removes everything, which happens to match how PostgREST's
+"delete every row" idiom behaves.
 
 Supported auth methods (UC6 Log In / UC8 Sign Up): sign_up,
 sign_in_with_password, get_user, admin.sign_out, admin.delete_user. Failures raise
@@ -60,6 +63,8 @@ class _Query:
         self._payload = None
         self._eq = []   # list of (col, value) equality filters
         self._gt = []   # list of (col, value) greater-than filters
+        self._order = None   # (column, desc)
+        self._range = None   # (start, end) — inclusive both ends, as PostgREST
 
     # -- table switch (a couple of repos re-call .table() mid-chain) --
     def table(self, name):
@@ -104,9 +109,21 @@ class _Query:
     def like(self, *_a, **_k): return self
     def ilike(self, *_a, **_k): return self
     def in_(self, *_a, **_k): return self
-    def order(self, *_a, **_k): return self
     def limit(self, *_a, **_k): return self
-    def range(self, *_a, **_k): return self
+
+    # -- ordering + pagination --
+    # These two ARE modelled, unlike the filters above, because a repository that pages
+    # (LearnerScoreRepository.list_cohort — the cohort is ~5,800 rows against PostgREST's
+    # 1,000-row cap) loops until a short page comes back. Against a passthrough `range`
+    # every page is the full table, the loop never sees a short one, and the test hangs
+    # instead of failing. A double that silently ignores paging cannot test paging.
+    def order(self, column, desc=False, **_kw):
+        self._order = (column, desc)
+        return self
+
+    def range(self, start, end):
+        self._range = (start, end)
+        return self
 
     def single(self):
         self._single = True
@@ -121,6 +138,15 @@ class _Query:
         rows = self._store.setdefault(self._table, [])
         if self._op == "select":
             out = [r for r in rows if self._matches(r)]
+            if self._order is not None:
+                column, desc = self._order
+                # `""` as the sort key for a missing/None cell: real Postgres would order
+                # nulls, and comparing None against a str raises in Python.
+                out = sorted(out, key=lambda r: (r.get(column) is None, r.get(column) or ""),
+                             reverse=desc)
+            if self._range is not None:
+                start, end = self._range
+                out = out[start:end + 1]        # PostgREST's range is inclusive at both ends
             return _Result(out)
         if self._op == "insert":
             items = self._payload if isinstance(self._payload, list) else [self._payload]
@@ -132,9 +158,14 @@ class _Query:
             # idempotent is untestable.
             items = self._payload if isinstance(self._payload, list) else [self._payload]
             for item in items:
-                key = item.get("id")
+                # Which column is the primary key differs by table: most use `id`, but
+                # learner_scores is keyed by the anonymised `student_id`. Without this the
+                # cohort upsert would append 5,783 duplicate rows on every re-ingest instead
+                # of conflicting, and the double would not catch it.
+                key_column = next((c for c in ("id", "student_id") if c in item), None)
+                key = item.get(key_column) if key_column else None
                 existing = next(
-                    (r for r in rows if key is not None and r.get("id") == key), None
+                    (r for r in rows if key is not None and r.get(key_column) == key), None
                 )
                 if existing is None:
                     rows.append(dict(item))

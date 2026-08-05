@@ -177,3 +177,72 @@ frontend (`npm run build && npm run preview -- --port 4173`) with `VITE_API_URL`
 Markers are declared in `pytest.ini` (`--strict-markers` rejects typos). CI runs each level as a
 separate job in `.github/workflows/tests.yml`; e2e/system read repo Secrets and self-skip until
 those are configured.
+
+---
+
+## UC2 traceability — Generate Learner Profile + cohort clustering
+
+Every UC2 test carries its plan ID in its docstring (`"""UT-2.5: ..."""`), and each module's
+docstring maps activation bars to the IDs it covers — the convention UC6/UC8 established.
+
+### Covered by the PM3 test plan
+
+| Bar | Unit under test | IDs | File |
+|-----|-----------------|-----|------|
+| AB2.2 | `ProfileController.generateProfile` | UT-2.1, UT-2.2 | `unit/test_uc2_generate_profile.py` |
+| AB2.3 | `ProfilingService.generateProfile` | UT-2.3 – UT-2.5 | `unit/test_uc2_generate_profile.py` |
+| AB2.4 | `AssessmentRepository.findByLearner` | UT-2.6, UT-2.7 | `unit/test_uc2_generate_profile.py` |
+| AB2.5 | `ProfilingAlgorithm.analyse` | UT-2.8, UT-2.9 | `unit/test_profiling_algorithm.py` |
+| AB2.6 | `LearnerProfileRepository.saveProfile` | UT-2.10, UT-2.11 | `unit/test_uc2_generate_profile.py` |
+| — | bottom-up call graph, levels 1→4 | IT-2.1 – IT-2.11 | `integration/test_uc2_generate_profile.py` |
+
+### Extends the plan — clustering has no IDs there
+
+`ProfilingAlgorithm.cluster()` is declared in the class diagram but carries no test ID in the
+PM3 UC2 plan. These IDs **continue** the sequence rather than renumbering it, so the existing
+plan rows stay valid and the plan needs only appending.
+
+| Bar | Unit under test | IDs | File |
+|-----|-----------------|-----|------|
+| AB2.7 | `ProfilingAlgorithm.cluster` | UT-2.12 – UT-2.18 | `unit/test_profiling_algorithm_cluster.py` |
+| AB2.8 | `ProfilingAlgorithm.cluster_by_group` | UT-2.19, UT-2.20 | `unit/test_profiling_algorithm_cluster.py` |
+| AB2.9 | `dial_workbook.load_latest_per_student` | UT-2.21, UT-2.22 | `unit/test_dial_workbook.py` |
+| AB2.10 | `dial_workbook._collapse_writing` | UT-2.23, UT-2.24 | `unit/test_dial_workbook.py` |
+| AB2.11 | `dial_workbook._band_group` | UT-2.25 | `unit/test_dial_workbook.py` |
+| AB2.12 | `dial_workbook.coverage` + feature sets | UT-2.26 | `unit/test_dial_workbook.py` |
+| AB2.13 | `Graph.jsx` (React) | UT-2.27 – UT-2.36 | `frontend/src/components/__tests__/Graph.test.jsx` |
+| — | bottom-up call graph for `/dashboard/clusters` | IT-2.12 – IT-2.19 | `integration/test_dashboard_clusters.py` |
+
+Within AB2.13, the two dashboard controls are:
+
+| IDs | Covers |
+|-----|--------|
+| UT-2.34 | the clustering scope toggle — default is cohort, switching re-colours, a selected chip is cleared |
+| UT-2.35 | the band filter — narrows plot and legend, works in both scopes, **never recolours a surviving point** |
+
+UT-2.35's colour-stability case is the load-bearing one. Colours are assigned by index into
+the sorted label list, so deriving them from the *filtered* rows would renumber the palette on
+every filter change and repaint the whole plot. `Graph.jsx` builds its `palette` from the
+unfiltered rows to prevent exactly that, and this test is what holds it in place.
+
+### Not yet implemented
+
+**ST-2.1 – ST-2.4** (Selenium, browser UI) and the UC2 **end-to-end** flow. Both are Week 13
+items in the plan. ST-2.2/2.3/2.4 exercise the three error branches through the browser, which
+the 404/422/500 mapping in `routers/profiles.py` now makes distinguishable.
+
+### Error types the plan requires
+
+The plan's failure branches did not exist in code before these tests; they were added with them:
+
+| Exception | Raised by | Flow | HTTP |
+|-----------|-----------|------|------|
+| `EmptyDataError` | `ProfilingService` | 2a — learner has no records | 404 |
+| `NoPatternError` | `ProfilingAlgorithm.analyse` | 4a — nothing evidenced | (translated) |
+| `ProfileGenerationError` | `ProfilingService` | 4a, after translation | 422 |
+| `StorageError` | `repositories/base.py` | 6a — database refused | 500 |
+
+`analyse()` previously returned a seven-way NEUTRAL dict when nothing could be scored. It now
+raises `NoPatternError` instead, because an all-NEUTRAL result renders as a complete radar
+chart sitting at exactly 50% on every axis — a confident-looking statement about a learner we
+know nothing about.

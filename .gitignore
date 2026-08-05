@@ -16,6 +16,10 @@ frontend/.vite/
 backend/data/curriculum/**/*.pdf
 backend/data/curriculum/_orphans.log
 
+# DAS cohort workbook (Subsystem 2 — gitignored source material, same reason as the curriculum
+# PDFs). scripts/ingest_dial_data.py reads it from the repo root; it is not ours to redistribute.
+DIAL_Anonymised_Data.xlsx
+
 CLAUDE.md
 IMPLEMENTATION_PLAN.md
 DEMO_PLAN.md

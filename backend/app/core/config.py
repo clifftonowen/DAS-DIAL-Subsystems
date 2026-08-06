@@ -19,7 +19,9 @@ class Settings(BaseSettings):
 
     # Gemini backend (generation only — Gemini embeddings are deliberately not wired)
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-pro"
+    # gemini-2.5-pro is listed by the models endpoint but 404s on generateContent for keys
+    # issued after it closed to new users — pick a model, then verify it actually answers.
+    gemini_model: str = "gemini-3.5-flash"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     gemini_temperature: float = 0.0
 

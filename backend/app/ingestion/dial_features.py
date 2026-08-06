@@ -29,6 +29,45 @@ DIAL_FEATURES: dict[str, tuple[str, float]] = {
 FEATURE_LABELS: dict[str, str] = {k: v[0] for k, v in DIAL_FEATURES.items()}
 FEATURE_MAXIMA: dict[str, float] = {k: v[1] for k, v in DIAL_FEATURES.items()}
 
+# Denominator for the 0-10 normalisation the RETRIEVAL QUERY ranks on — the rubric ceiling rounded
+# UP to a round number. Deliberately separate from FEATURE_MAXIMA, which is the exact ceiling the
+# UI renders ("31/46") and is served as DialMetric.max; that one must stay exact.
+#
+# ONE CEILING PER FEATURE, NOT PER BAND, and that is a known approximation. Phonics tops out at 25
+# in A1 and 30 in A2, so a lower-band learner scores lower here than their paper warrants — a
+# perfect 25/25 reads as 5.0/10. Accepted because no per-band ceiling is recorded anywhere in the
+# schema, the workbook or the parsed reports, and `learners.band` is null for many learners. The
+# fix, if this bites, is a table keyed on the FINE band rather than the feature.
+#
+# Rounding up also costs a little: 46 -> 50 makes every phonics score read ~8% lower than exact
+# division would, which nudges phonics toward being picked as a weakness. Uniform across learners,
+# so it moves the metric's baseline rather than distorting one learner against another.
+NORMALISATION_CEILINGS: dict[str, float] = {
+    "phonics":               50.0,   # exact ceiling 46
+    "word_reading_accuracy": 10.0,
+    "word_spelling":         10.0,
+    "writing":               30.0,   # exact ceiling 24
+}
+
+
+def normalised_score(key: str, raw: float | None) -> float | None:
+    """One mark as a 0-10 score, or None if it was never assessed.
+
+    The single definition of that score, because two callers must agree on it: the retrieval query
+    ranks metrics by it (ActivityGenerationService.build_query) and the prompt states it back to
+    the model (activity_prompts._fmt_mark). Two copies would eventually disagree, and the prompt
+    would then cite a number the query did not act on.
+
+    NOT ASSESSED IS NOT ZERO. None in, None out — a learner who never sat the writing paper (all
+    of band A) must not be scored 0/10 on it and handed a writing activity.
+
+    Clamped at 10: the ceiling is rounded up, so a full 46/46 phonics gives 9.2, but a mark above
+    the rounded ceiling should still read as mastery rather than overflow the scale.
+    """
+    if not isinstance(raw, (int, float)):
+        return None
+    return min(raw / NORMALISATION_CEILINGS[key] * 10, 10.0)
+
 # ── Feature groups ───────────────────────────────────────────────────────────
 # What k-means actually sees. Complete for all 5,783 students, so every learner gets a label.
 CLUSTER_FEATURES: tuple[str, ...] = (

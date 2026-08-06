@@ -273,9 +273,14 @@ create index if not exists idx_curriculum_source
 
 -- Mirrors match_strategies(); used by CurriculumRepository.match_curriculum().
 -- Filters run in WHERE (correctness); the vector only ranks survivors (relevance).
+-- TWO band filters, and they mean different things. `filter_band` is exact ('A1'), for the CLI.
+-- `filter_band_group` is the LETTER ('A'), and is what a learner is scoped by: learners carry
+-- band_group, and a Band A learner must reach all 120 A-chunks — the 90 stored as 'A' plus the
+-- three band books stored as 'A1'/'A2'/'A3'. See 2026-08-09_curriculum_band_group_filter.sql.
 create or replace function match_curriculum(
   query_embedding vector(768),
   filter_band text default null,
+  filter_band_group text default null,
   filter_concept text default null,
   filter_stage text default null,
   match_count int default 3
@@ -290,9 +295,10 @@ language sql stable as $$
          1 - (c.embedding <=> query_embedding) as similarity
   from curriculum_chunks c
   where c.doc_type = 'lesson_plan'
-    and (filter_band    is null or c.band    = filter_band)
-    and (filter_concept is null or c.concept = filter_concept)
-    and (filter_stage   is null or c.stage   = filter_stage)
+    and (filter_band       is null or c.band = filter_band)
+    and (filter_band_group is null or left(c.band, 1) = filter_band_group)
+    and (filter_concept    is null or c.concept = filter_concept)
+    and (filter_stage      is null or c.stage = filter_stage)
   order by c.embedding <=> query_embedding
   limit match_count;
 $$;
@@ -305,6 +311,7 @@ create or replace function hybrid_match_curriculum(
   query_embedding vector(768),
   query_text text,
   filter_band text default null,
+  filter_band_group text default null,
   filter_concept text default null,
   filter_stage text default null,
   match_count int default 3,
@@ -319,12 +326,15 @@ returns table (
   similarity float, score float
 )
 language sql stable as $$
+  -- Band filtering lives HERE, not after ranking: out-of-band chunks are never candidates for
+  -- either arm, so RRF fusion cannot resurrect one.
   with filtered as (
     select * from curriculum_chunks c
     where c.doc_type = 'lesson_plan'
-      and (filter_band    is null or c.band    = filter_band)
-      and (filter_concept is null or c.concept = filter_concept)
-      and (filter_stage   is null or c.stage   = filter_stage)
+      and (filter_band       is null or c.band = filter_band)
+      and (filter_band_group is null or left(c.band, 1) = filter_band_group)
+      and (filter_concept    is null or c.concept = filter_concept)
+      and (filter_stage      is null or c.stage = filter_stage)
   ),
   semantic as (
     select f.id,

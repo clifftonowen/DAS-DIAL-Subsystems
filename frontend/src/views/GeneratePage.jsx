@@ -95,11 +95,13 @@ export default function GeneratePage() {
     setResult(null);
     try {
       // The learner id is enough — the backend reads their four DIAL marks and builds the
-      // query from the two they rank lowest on. Band is passed only when it matches the
-      // curriculum's own vocabulary; any other value would filter the corpus to
-      // nothing and turn every request into a refusal.
-      const band = /^A[123]$/.test(selectedStudent.band || "") ? selectedStudent.band : undefined;
-      const data = await generateActivity(selectedStudent.id, { band, notes: notes.trim() });
+      // query from the two they rank lowest on.
+      //
+      // NO BAND IS SENT. It is derived server-side from the learner's band_group, and a
+      // learner is only ever grounded in their own band's curriculum. This used to compute
+      // the filter here, which meant every B and C learner sent nothing and was silently
+      // grounded in Band A material.
+      const data = await generateActivity(selectedStudent.id, { notes: notes.trim() });
       setResult(data);
     } catch (err) {
       console.error(err);

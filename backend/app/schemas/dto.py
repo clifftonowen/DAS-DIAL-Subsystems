@@ -36,12 +36,16 @@ class GenerationParams(BaseModel):
     """Body of POST /activities/{learner_id}/generate.
 
     Every field is optional: with an empty body the service derives the retrieval
-    query from the learner's profile alone. band/concept/stage are the curriculum
-    metadata filters applied inside the match RPC, mirroring the CLI's flags.
+    query from the learner's profile alone. concept/stage are curriculum metadata
+    filters applied inside the match RPC, mirroring the CLI's flags.
+
+    BAND IS NOT ONE OF THEM. Retrieval is scoped to the learner's own band_group,
+    read server-side, so a learner can never be grounded in another band's
+    curriculum — a caller-supplied band would be a way around exactly that.
     """
     literacy_objective: str = ""
     level: str = ""
-    band: Optional[str] = None
+    band: Optional[str] = None   # accepted for back-compat; IGNORED for retrieval scope
     concept: Optional[str] = None
     stage: Optional[str] = None
     notes: str = ""           # free-text steer, appended to the profile-derived query

@@ -1,11 +1,15 @@
 """CLI entry point for offline curriculum ingestion (run from backend/).
 
-    python -m scripts.ingest_curriculum run    --file data/curriculum/14_Action_predicate.pdf [--dry-run] [--no-embed]
+    python -m scripts.ingest_curriculum run    --file data/curriculum/band_a/2_A1.pdf [--dry-run] [--no-embed]
+    python -m scripts.ingest_curriculum run    --band b [--dry-run] [--no-embed]
     python -m scripts.ingest_curriculum run    --all [--dry-run] [--no-embed]
-    python -m scripts.ingest_curriculum verify --source 14_Action_predicate.pdf
+    python -m scripts.ingest_curriculum verify --source 2_A1.pdf
 
---dry-run prints the chunk table (module | concept | stage | seq | pages | key | chars | title)
-WITHOUT calling the embedding gateway or the database. Always dry-run a new book first.
+--band <a|b|c> ingests exactly one band folder (data/curriculum/band_<x>/), so re-running a band
+costs nothing on the others; --all walks every band folder in BAND_DIRS order.
+
+--dry-run prints the chunk table (band | module | concept | stage | seq | pages | key | chars |
+title) WITHOUT calling the embedding gateway or the database. Always dry-run a new book first.
 
 The parse->build path (read -> detect -> parse -> build) needs no secrets and runs offline; only
 the non-dry `run` reaches the pipeline (embeddings + Supabase), imported lazily so this CLI loads
@@ -28,15 +32,24 @@ def parse_pdf(path: Path) -> tuple[str, list[CurriculumChunk]]:
     from app.ingestion.parsers.registry import detect_parser
     from app.ingestion.chunk_builder import build_chunks
 
+    band = band_for_path(path)
     doc = read_pdf(path)
-    parser = detect_parser(doc, band=band_for_path(path))
-    units = parser.parse(doc)
+    parser = detect_parser(doc, band=band)
+    units = parser.parse(doc, band=band)
     return parser.name, build_chunks(units, ingest_version=INGEST_VERSION)
 
 
-def _resolve_paths(file: str | None, all_: bool) -> list[Path]:
+def _resolve_paths(file: str | None, all_: bool, band: str | None = None) -> list[Path]:
+    """The PDFs one `run` invocation covers: one file, one band folder, or the whole corpus."""
+    from app.ingestion.bands import BAND_DIRS
+
     if all_:
         return sorted(DATA_DIR.glob("**/*.pdf"))  # recurse into band_a/ band_b/ band_c/
+    if band:
+        subdir = BAND_DIRS.get(band.upper())
+        if subdir is None:
+            raise SystemExit(f"Unknown band {band!r} — expected one of {list(BAND_DIRS)}.")
+        return sorted((DATA_DIR / subdir).glob("*.pdf"))
     if file:
         return [Path(file)]
     return []
@@ -44,14 +57,15 @@ def _resolve_paths(file: str | None, all_: bool) -> list[Path]:
 
 def format_chunk_table(chunks: list[CurriculumChunk]) -> str:
     """Human-scannable dry-run table — one row per chunk, plus a summary line."""
-    header = f"{'module':<18} {'concept':<18} {'stage':<14} {'seq':>3} {'pages':>9} {'key':>3} {'chars':>6}  title"
+    header = (f"{'band':<5} {'module':<18} {'concept':<18} {'stage':<14} {'seq':>3} "
+              f"{'pages':>9} {'key':>3} {'chars':>6}  title")
     rows = [header, "-" * len(header)]
     for c in chunks:
         pages = f"{c.page_start or '?'}-{c.page_end or '?'}"
         rows.append(
-            f"{(c.module or '-'):<18.18} {c.concept:<18.18} {(c.stage or '-'):<14.14} "
-            f"{c.sequence_no:>3} {pages:>9} {'Y' if c.answer_key else '-':>3} "
-            f"{len(c.content_md):>6}  {c.activity_title or '-'}"
+            f"{c.band:<5.5} {(c.module or '-'):<18.18} {c.concept:<18.18} "
+            f"{(c.stage or '-'):<14.14} {c.sequence_no:>3} {pages:>9} "
+            f"{'Y' if c.answer_key else '-':>3} {len(c.content_md):>6}  {c.activity_title or '-'}"
         )
     traits_cov = sum(1 for c in chunks if c.writing_traits)
     pct = (100 * traits_cov // len(chunks)) if chunks else 0
@@ -61,9 +75,10 @@ def format_chunk_table(chunks: list[CurriculumChunk]) -> str:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    paths = _resolve_paths(args.file, args.all)
+    paths = _resolve_paths(args.file, args.all, args.band)
     if not paths:
-        print("Nothing to do: pass --file <pdf> or --all (data/curriculum/*.pdf).")
+        print("Nothing to do: pass --file <pdf>, --band <a|b|c>, or --all "
+              f"(searched {DATA_DIR}).")
         return 1
 
     total = 0
@@ -128,6 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="parse (and, without --dry-run, embed + store) books")
     src = run.add_mutually_exclusive_group(required=True)
     src.add_argument("--file", help="a single PDF path")
+    src.add_argument("--band", help="every PDF in one band folder, e.g. --band b")
     src.add_argument("--all", action="store_true", help="every PDF in data/curriculum/")
     run.add_argument("--dry-run", action="store_true", help="print the chunk table; no embed/DB")
     run.add_argument("--no-embed", action="store_true", help="store rows but skip embeddings")

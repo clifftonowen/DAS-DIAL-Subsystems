@@ -61,13 +61,13 @@ def _log_orphans(doc: Document) -> int:
 def ingest_file(path: str | Path, no_embed: bool = False, band: str | None = None) -> int:
     """Ingest one PDF end-to-end. Returns the number of chunks stored.
 
-    band defaults to the source folder's band (data/curriculum/<band folder>/); B and C route to
-    empty stub parsers until their layouts are analysed.
+    band defaults to the source folder's band (data/curriculum/<band folder>/); A and B share the
+    two layout parsers, C routes to an empty stub until its layout is analysed.
     """
     band = band or band_for_path(path)
     doc = read_pdf(path)
     parser = detect_parser(doc, band=band)
-    units = parser.parse(doc)
+    units = parser.parse(doc, band=band)
     chunks = build_chunks(units, ingest_version=INGEST_VERSION)
     _log_orphans(doc)
 
@@ -88,8 +88,8 @@ def ingest_file(path: str | Path, no_embed: bool = False, band: str | None = Non
 def ingest_all(no_embed: bool = False) -> int:
     """Ingest every PDF under data/curriculum/<band folder>/. Returns total chunks stored.
 
-    Walks each band folder in turn so a file's band is fixed by where it sits. Band B/C folders
-    contribute 0 chunks until their stub parsers are implemented.
+    Walks each band folder in turn so a file's band is fixed by where it sits. The Band C folder
+    contributes 0 chunks until its stub parser is implemented.
     """
     total = 0
     for band, subdir in BAND_DIRS.items():

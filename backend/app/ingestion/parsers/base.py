@@ -1,10 +1,12 @@
 """Parser protocol — both layout parsers satisfy this shape.
 
-    matches(doc) -> bool     : does this parser own the document's boundary signal?
-    parse(doc)   -> [Unit]   : segment the pages into teaching units (no embedding, no DB)
+    matches(doc)       -> bool     : does this parser own the document's boundary signal?
+    parse(doc, band)   -> [Unit]   : segment the pages into teaching units (no embedding, no DB)
 
-parse takes the whole Document (not just pages) because a Unit needs the source_file and the
-band, which are document-level. Both parsers segment doc.pages via the universal segment().
+parse takes the whole Document (not just pages) because a Unit needs the source_file, which is
+document-level. It also takes the band LETTER, which the document itself cannot be trusted for —
+it comes from the source folder (bands.py). Parsers resolve only the sub-band digit (A1/A2/A3,
+B1/B2/B3) from the filename or page text. Both parsers segment doc.pages via segment().
 """
 from __future__ import annotations
 from typing import Protocol
@@ -18,4 +20,4 @@ class Parser(Protocol):
 
     def matches(self, doc: Document) -> bool: ...
 
-    def parse(self, doc: Document) -> list[Unit]: ...
+    def parse(self, doc: Document, band: str = "A") -> list[Unit]: ...

@@ -10,9 +10,11 @@ so the offline CLI can import it without pulling in embeddings or Supabase.
 
 A file placed directly in data/curriculum/ (legacy flat layout) defaults to band "A".
 
-The folder band is the LETTER; the sub-band digit (A1/A2/A3, B1/B2/B3) still comes from the
-document — filename token first, then body text. The helpers below are band-scoped so a Band B
-book can never be labelled 'A1': they only ever look for the letter the folder already fixed.
+LEVEL (the digit) is a separate question from BAND (the letter), and only ONE kind of evidence is
+trusted for it: a band book naming its own level in its FILENAME. Page text is deliberately not
+consulted — '2) A1.pdf' mentions 'A3' on as many pages as it mentions 'A1', so a body token says
+nothing reliable about the book it sits in. Every other PDF therefore carries the bare letter,
+which is also what learners.band_group holds ('A' | 'B' | 'C'), so the two line up directly.
 """
 from __future__ import annotations
 import re
@@ -22,7 +24,11 @@ from pathlib import Path
 BAND_DIRS: dict[str, str] = {"A": "band_a", "B": "band_b", "C": "band_c"}
 FOLDER_TO_BAND: dict[str, str] = {folder: band for band, folder in BAND_DIRS.items()}
 
-SUB_BANDS = "123"
+# Level tokens a band book may name itself with, per band. Only the three Band A books do
+# ('2) A1.pdf', '3) A2.pdf', '4) A3.pdf'); B and C have no entry, so their chunks keep the bare
+# letter. Add a tuple here if levelled B/C books ever arrive — but note the learner scale runs
+# B4-B6 and C7-C9, NOT B1-B3: a level invented here would match no learner.
+BAND_LEVELS: dict[str, tuple[str, ...]] = {"A": ("A1", "A2", "A3")}
 
 
 def band_for_path(path: str | Path) -> str:
@@ -30,22 +36,13 @@ def band_for_path(path: str | Path) -> str:
     return FOLDER_TO_BAND.get(Path(path).parent.name, "A")
 
 
-def default_sub_band(band: str = "A") -> str:
-    """Baseline when the document carries no sub-band token: the band's first level."""
-    return f"{band}1"
-
-
 def band_from_filename(source_file: str, band: str = "A") -> str:
-    """'2_A1.pdf' -> 'A1'; '5_B2.pdf' -> 'B2'. Defaults to <band>1 when no token is present.
+    """'2) A1.pdf' -> 'A1'. Any filename without a level token -> the bare band letter.
 
-    No \\b before the letter on purpose: the corpus names files '2_A1.pdf', and '_' is a word
-    character, so a word boundary would never match there.
+    No word boundary before the token on purpose: the corpus also names files '2_A1.pdf', and
+    '_' is a word character, so \\b would never match there.
     """
-    m = re.search(rf"{re.escape(band)}([{SUB_BANDS}])", source_file or "")
-    return f"{band}{m.group(1)}" if m else default_sub_band(band)
-
-
-def band_in_text(text: str | None, band: str = "A") -> str | None:
-    """First standalone <band>1/2/3 token in the text, else None (body/header prose)."""
-    m = re.search(rf"\b{re.escape(band)}([{SUB_BANDS}])\b", text or "")
-    return f"{band}{m.group(1)}" if m else None
+    for level in BAND_LEVELS.get(band, ()):
+        if re.search(rf"{re.escape(level)}\b", source_file or "", re.IGNORECASE):
+            return level
+    return band

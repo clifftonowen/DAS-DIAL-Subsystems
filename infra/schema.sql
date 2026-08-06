@@ -158,7 +158,8 @@ create table if not exists curriculum_chunks (
   id uuid primary key default gen_random_uuid(),
 
   -- filters
-  band text not null,                      -- 'A1' | 'A2' | 'A3'  (finer than learners.band_level)
+  band text not null,                      -- 'A' | 'B' | 'C' (matches learners.band_group), or
+                                           -- 'A1'|'A2'|'A3' for the three levelled band books
   module text,                             -- 'Barebone Sentence' | 'Predicate Expanders'
   concept text not null,                   -- 'action_predicate' | 'all' | ...  <- curriculum join key
   stage text,                              -- 'presentation' | 'practice' | 'production' | ...

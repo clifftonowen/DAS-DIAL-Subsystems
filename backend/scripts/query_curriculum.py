@@ -67,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="query_curriculum", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("query", help="the text to search for")
-    p.add_argument("--band", help="filter: 'A1' | 'A2' | 'A3'")
+    p.add_argument("--band", help="filter: 'A' | 'B' | 'C', or 'A1' | 'A2' | 'A3' for a band book")
     p.add_argument("--concept", help="filter: curriculum concept join key (e.g. action_predicate)")
     p.add_argument("--stage", help="filter: 'presentation' | 'practice' | 'production' | ...")
     p.add_argument("--k", type=int, default=3, help="number of chunks to return (default 3)")

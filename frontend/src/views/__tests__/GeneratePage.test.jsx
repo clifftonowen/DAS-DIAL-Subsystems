@@ -33,7 +33,7 @@ test("sends the learner id and renders the activity with its grounding sources",
   generateActivity.mockResolvedValue({
     status: "GENERATED",
     content: "Title: Rhyme Time\n1. Clap the rhyme.",
-    query: "literacy activity targeting decoding and spelling",
+    query: "literacy activity targeting phonics 2.4/10 and word spelling 4.0/10",
     learner_id: "learner-1",
     grounding: [
       { title: "Rhyme Time", source: "a.pdf", page: 4, concept: "onset_rime",
@@ -44,12 +44,36 @@ test("sends the learner id and renders the activity with its grounding sources",
   render(<GeneratePage />);
   await selectAndGenerate(user);
 
-  expect(generateActivity).toHaveBeenCalledWith("learner-1", { band: "A1", notes: "" });
+  expect(generateActivity).toHaveBeenCalledWith("learner-1", { notes: "" });
   expect(await screen.findByText(/Clap the rhyme/)).toBeInTheDocument();
   expect(screen.getByText("Grounded in 1 source")).toBeInTheDocument();
   expect(screen.getByText("Rhyme Time")).toBeInTheDocument();
   expect(screen.getByText("a.pdf p.4 · onset_rime · practice")).toBeInTheDocument();
   expect(screen.getByText("0.71")).toBeInTheDocument();
+});
+
+test.each([
+  ["A1", "a band the curriculum vocabulary knows"],
+  ["B5", "a band it does not"],
+  [null, "no band at all"],
+])("never sends a band, given %s (%s)", async (band) => {
+  const user = userEvent.setup();
+  listLearners.mockResolvedValue({
+    items: [{ ...LEARNER, band }], total: 1, page: 1, per_page: 20,
+  });
+  generateActivity.mockResolvedValue({
+    status: "GENERATED", content: "x", query: "q", learner_id: "learner-1", grounding: [],
+  });
+
+  render(<GeneratePage />);
+  await selectAndGenerate(user);
+
+  // Retrieval scope is read from the learner's band_group SERVER-SIDE. A band from here would
+  // be a way around that — and the page used to compute one, sending it only when it matched
+  // /^A[123]$/, which meant every B and C learner sent nothing and was grounded in band A.
+  const [, payload] = generateActivity.mock.calls[0];
+  expect(payload).not.toHaveProperty("band");
+  expect(payload).toEqual({ notes: "" });
 });
 
 test("shows the refusal reason when the curriculum does not cover the request", async () => {
@@ -58,7 +82,7 @@ test("shows the refusal reason when the curriculum does not cover the request", 
     status: "INSUFFICIENT_CONTEXT",
     content: "",
     reason: "best similarity 0.310 is below the 0.5 gate.",
-    query: "literacy activity targeting decoding and spelling",
+    query: "literacy activity targeting phonics 2.4/10 and word spelling 4.0/10",
     learner_id: "learner-1",
     grounding: [],
   });

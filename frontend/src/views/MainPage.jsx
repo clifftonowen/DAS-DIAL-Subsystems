@@ -131,7 +131,11 @@ export default function MainPage() {
 
       {/* Same LearnerDetailPage the Learners tab routes to, handed an id instead of
           reading one from the URL. Closing returns to the graph with its selected
-          cluster and camera angle intact. */}
+          cluster and camera angle intact.
+
+          Every plotted learner can be opened: since the merge they are all rows in `learners`
+          with a uuid. A research-cohort learner's page renders read-only — the page decides
+          that from `on_caseload`, not this component. */}
       {selectedLearner && (
         <Modal onClose={() => setSelectedLearner(null)}>
           <LearnerDetailPage

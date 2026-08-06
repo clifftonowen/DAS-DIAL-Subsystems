@@ -33,10 +33,55 @@ def test_get_learner_raises_404_when_missing():
     assert exc.value.status_code == 404
 
 
-def test_list_learners_delegates_to_repository():
+def test_list_learners_asks_for_one_page():
     svc = LearnerService()
     svc.learners = Mock()
-    svc.learners.list_all.return_value = [{"id": "l1"}]
+    svc.learners.list_page.return_value = ([{"id": "l1", "pseudonym": "Ada"}], 137)
 
-    assert svc.list_learners() == [{"id": "l1"}]
-    svc.learners.list_all.assert_called_once_with()
+    page = svc.list_learners(page=3, per_page=10, query="ada")
+
+    assert [i.id for i in page.items] == ["l1"]
+    assert page.total == 137, "the total is the filtered set, so the pager can size itself"
+    svc.learners.list_page.assert_called_once_with(
+        limit=10, offset=20, query="ada", caseload_only=True)
+
+
+def test_list_learners_defaults_to_the_caseload():
+    """The Learners tab is where a therapist works with their OWN learners.
+
+    Defaulting to the whole table would open it on thousands of anonymised research rows with
+    the ten that matter somewhere on page 200.
+    """
+    svc = LearnerService()
+    svc.learners = Mock()
+    svc.learners.list_page.return_value = ([], 0)
+
+    svc.list_learners()
+
+    assert svc.learners.list_page.call_args.kwargs["caseload_only"] is True
+
+
+def test_per_page_is_clamped_not_trusted():
+    """It arrives from the query string.
+
+    Unbounded, a caller could ask for the entire table in one request — the exact read the
+    paging exists to prevent — and PostgREST would truncate it at 1,000 without saying so.
+    """
+    svc = LearnerService()
+    svc.learners = Mock()
+    svc.learners.list_page.return_value = ([], 0)
+
+    svc.list_learners(per_page=100_000)
+
+    assert svc.learners.list_page.call_args.kwargs["limit"] == 100
+
+
+def test_a_page_below_one_is_clamped():
+    """`offset` must never go negative — PostgREST rejects the range outright."""
+    svc = LearnerService()
+    svc.learners = Mock()
+    svc.learners.list_page.return_value = ([], 0)
+
+    svc.list_learners(page=0)
+
+    assert svc.learners.list_page.call_args.kwargs["offset"] == 0

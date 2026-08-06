@@ -57,7 +57,9 @@ PREREQUISITES: dict[str, list[str]] = {
     "series": ["action_predicate"],
 }
 
-# ── Cognitive-construct bridge (to learner_profiles' seven floats) ────────────
+# ── Cognitive-construct bridge ───────────────────────────────────────────────
+# Free-text construct tags on a curriculum chunk. Written against the seven derived
+# dimensions that no longer exist; retrieval filters on band/concept/stage regardless.
 # HONEST mapping only. Band-book/phonics concepts map to the constructs the spec names;
 # Project Read grammar concepts have no clean mapping and stay EMPTY. Do NOT invent mappings —
 # an empty array is more honest than a wrong one. The seven constructs are:

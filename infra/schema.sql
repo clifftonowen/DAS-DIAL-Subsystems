@@ -9,12 +9,76 @@ create table if not exists users (
   name text default ''
 );
 
+-- ============================================================
+-- EVERY learner, of both kinds, in one table.
+--
+--   on_caseload = true    the therapist's own learners. Have a pseudonym and a tier; the only
+--                         ones with assessment_records, generated profiles and activities.
+--   on_caseload = false   the anonymised DAS research cohort behind the analytics scatter
+--                         (~5,783 rows, loaded by `python -m scripts.ingest_dial_data`).
+--                         Identified only by student_id; no pseudonym, no tier.
+--
+-- These were two tables (`learners` and `learner_scores`) joined by a nullable self-FK. They
+-- describe the same kind of thing, stored band twice in two disagreeing spellings, and gave one
+-- person two identities — see infra/migrations/2026-08-07_merge_learner_scores.sql.
+--
+-- THE TABLE IS LARGE. PostgREST caps a select at 1,000 rows and TRUNCATES WITHOUT ERRORING, so
+-- every full read pages (LearnerRepository.list_cohort) and every count is a count(), never
+-- len(rows). An unpaged `select("*")` here quietly returns a sixth of the table.
+-- ============================================================
 create table if not exists learners (
   id uuid primary key default gen_random_uuid(),
-  pseudonym text not null,
-  band_level text not null,        -- Band A / B / C
-  tier text default ''
+
+  -- Anonymised workbook key, e.g. 'Student 0001'. NULL for a learner created in the app, which
+  -- is why it cannot be the primary key. Unique so the ingest can upsert on it: the workbook
+  -- has no idea what a uuid is.
+  student_id text unique,
+
+  -- Caseload identity. Empty for cohort rows — the cohort is anonymised research data.
+  pseudonym text default '',
+  tier text default '',
+  on_caseload boolean not null default false,
+
+  band       text,                        -- NewBand: A1..C9
+  band_group text,                        -- 'A' | 'B' | 'C' — the clustering + percentile scope
+  semester     text,                      -- the most recent sitting on record
+  school_level text,
+  age          int,
+
+  phonics               real,             -- \
+  word_reading_accuracy real,             --  > the clustering features
+  word_spelling         real,             -- /
+  writing            real,                -- plottable, not clustered (absent for band A)
+  writing_genre      text,
+  narrative_writing  real,                -- \
+  exposition_writing real,                --  > mutually exclusive; provenance for `writing`
+  persuasive_writing real,                -- /
+  fluency_mark real,                      -- = 2 x word_reading_accuracy; never clustered
+
+  -- Percentile rank of each mark WITHIN THE LEARNER'S BAND GROUP, computed at ingest. The
+  -- profile page's radar chart shares one radius across axes, and the rubric differs by band
+  -- (phonics maxes at 25 in A1, 46 in A3) — so neither raw marks nor percent-of-max can go on
+  -- it. Null means not assessed, never "bottom of the cohort".
+  -- See infra/migrations/2026-08-06_score_percentiles.sql.
+  phonics_pct               real,
+  word_reading_accuracy_pct real,
+  word_spelling_pct         real,
+  writing_pct               real,
+
+  -- TWO clustering scopes, stored side by side so the dashboard can toggle between them.
+  --   cluster_band    '<band_group> <rank>', e.g. 'B 2' — one model per band group
+  --   cluster_cohort  'Cohort <rank>'        — one model over everyone
+  -- Different populations: every scored learner gets a cluster_cohort, but the 3 whose band is
+  -- missing fall below MIN_GROUP and get no cluster_band.
+  cluster_band   text,
+  cluster_cohort text,
+  updated_at timestamptz default now()
 );
+create index if not exists idx_learners_cluster_band   on learners (cluster_band);
+create index if not exists idx_learners_cluster_cohort on learners (cluster_cohort);
+create index if not exists idx_learners_band_group     on learners (band_group);
+-- The Learners tab filters on this by default, and it is true for ~10 rows out of thousands.
+create index if not exists idx_learners_on_caseload    on learners (on_caseload);
 
 create table if not exists assessment_records (
   id uuid primary key default gen_random_uuid(),
@@ -27,18 +91,61 @@ create table if not exists assessment_records (
   confidence_score float default 0
 );
 
-create table if not exists learner_profiles (
+-- One row per learner per SEMESTER — the score history behind the profile page's line chart.
+--
+-- Different grain from `learners`, which holds one row per person with their CURRENT marks.
+-- The workbook carries ~22,892 sittings for 5,783 students across nine semesters; the ingest
+-- writes all of them here and the newest one onto `learners`.
+--
+-- Replaced `learner_profiles` and its seven derived cognitive dimensions, which were mock
+-- scaffolding — see infra/migrations/2026-08-08_dial_dimensions.sql.
+create table if not exists learner_sittings (
   id uuid primary key default gen_random_uuid(),
-  learner_id uuid references learners(id) on delete cascade,
-  phonological_processing float default 0,
-  decoding float default 0,
-  spelling float default 0,
-  comprehension float default 0,
-  working_memory float default 0,
-  executive_functioning float default 0,
-  visualisation float default 0,
-  created_at timestamptz default now()
+  learner_id uuid not null references learners(id) on delete cascade,
+  semester text not null,                 -- '2024 Sem 1' — sorts chronologically as text
+
+  -- The paper sat THAT semester: phonics is out of 30 in A2 and 46 in A3, so the band a mark
+  -- should be read against belongs to the sitting, not to the learner.
+  band       text,
+  band_group text,
+
+  phonics               real,
+  word_reading_accuracy real,
+  word_spelling         real,
+  writing               real,
+  writing_genre         text,
+
+  -- Percentile within (semester, band_group), so the line moves as the learner does rather
+  -- than as the cohort around them changes.
+  phonics_pct               real,
+  word_reading_accuracy_pct real,
+  word_spelling_pct         real,
+  writing_pct               real,
+
+  -- 'workbook' (the ingest) | 'upload' (UC1's confirm step) | 'seed' (infra/seed.sql's
+  -- ten mock learners). Provenance only — nothing branches on it, but it is how you tell
+  -- a demo row from a real mark.
+  source text not null default 'workbook',
+  created_at timestamptz default now(),
+  unique (learner_id, semester)             -- the ingest's upsert key
 );
+create index if not exists idx_sittings_learner on learner_sittings (learner_id, semester desc);
+
+-- One row per k-means fit — the cohort model plus one per band group — so the dashboard can
+-- show how each k was chosen and compare the two scopes.
+create table if not exists clustering_runs (
+  id              uuid primary key default gen_random_uuid(),
+  scope           text not null default 'band',  -- 'cohort' | 'band'
+  tier            text not null,          -- 'Cohort', or the band group this model was fitted on
+  features        text[] not null,
+  k               int not null,           -- chosen by best silhouette, not configured
+  best_silhouette real not null,
+  silhouette_by_k jsonb not null,         -- the whole k = 2..10 sweep
+  n_learners      int not null,
+  created_at      timestamptz default now()
+);
+create index if not exists idx_clustering_runs_scope
+  on clustering_runs (scope, tier, created_at desc);
 
 -- RAG corpus: ELL-MLP teaching resources embedded for retrieval
 create table if not exists instructional_strategies (
@@ -53,7 +160,9 @@ create index if not exists idx_strategies_embedding
 
 create table if not exists learning_activities (
   id uuid primary key default gen_random_uuid(),
-  profiled uuid references learner_profiles(id),
+  -- Was `profiled uuid references learner_profiles(id)`. Points at the learner directly now
+  -- that the profile IS their marks — there is no separate profile row to hang it off.
+  learner_id uuid references learners(id),
   content jsonb default '{}',
   literacy_objective text default '',
   level text default '',
@@ -61,6 +170,7 @@ create table if not exists learning_activities (
   grounded_on text[] default '{}',
   created_at timestamptz default now()
 );
+create index if not exists idx_activities_learner on learning_activities (learner_id);
 
 create table if not exists reviews (
   id uuid primary key default gen_random_uuid(),
@@ -113,7 +223,10 @@ create table if not exists curriculum_chunks (
   sequence_no int default 1,               -- Practice worksheet 1 vs 2 vs 3
   doc_type text not null default 'lesson_plan',   -- lesson_plan | resource
   writing_traits text[] default '{}',      -- 6+1, lowercased; optional filter (63% coverage)
-  cognitive_constructs text[] default '{}',-- bridge to learner_profiles' seven floats
+  -- Free-text construct tags on a curriculum chunk. Used to bridge to a learner's needs; the
+  -- seven cognitive floats they were written against are gone, and the four DIAL metrics are
+  -- what a learner is described by now. Retrieval matches on band/concept/stage regardless.
+  cognitive_constructs text[] default '{}',
 
   -- content (fed to the LLM after retrieval)
   activity_title text,                     -- body heading; best discriminator on metadata ties

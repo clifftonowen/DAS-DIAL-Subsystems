@@ -63,8 +63,11 @@ class _Result:
     """Mimics the object returned by `.execute()`.
 
     `.count` is None unless the query asked for one (`select(..., count="exact")`), matching
-    PostgREST: the count is a separate Content-Range header, not something every response
-    carries. Repositories that page rely on the distinction.
+    PostgREST: the count comes from the Content-Range header, not the body.
+
+    IT COUNTS THE FILTERED SET, BEFORE range/limit — which is what lets a repository ask for
+    the total while transferring one row (`select(count="exact").limit(1)`). Counting after
+    the slice would report the page size and every pager would say "1-24 of 24".
     """
     def __init__(self, data, count=None):
         self.data = data
@@ -87,7 +90,6 @@ class _Query:
         self._range = None   # (start, end) — inclusive both ends, as PostgREST
         self._limit = None
         self._count = None       # the `count=` mode asked for, if any
-        self._head = False       # head=True -> count only, no rows
         self._negate = False     # set by `.not_`, consumed by the next filter
         self._on_conflict = None
 
@@ -97,10 +99,21 @@ class _Query:
         return self
 
     # -- operations --
-    def select(self, *_args, count=None, head=None, **_kw):
+    def select(self, *_args, count=None, **_kw):
+        """MIRRORS postgrest 0.16.11 — `count` only, deliberately NO `head`.
+
+        `head=True` exists in newer postgrest and reads better, but `supabase==2.7.4` pins
+        0.16.11, where it is a TypeError. This double once accepted it, so every unit test
+        passed while every e2e run against the real driver died with
+
+            select() got an unexpected keyword argument 'head'
+
+        A double that is more permissive than the pinned library cannot catch that class of
+        bug — it manufactures it. Keep this signature in step with the pin, and reject
+        anything the pinned version would reject.
+        """
         self._op = "select"
         self._count = count
-        self._head = bool(head)
         return self
 
     def insert(self, payload):
@@ -225,8 +238,7 @@ class _Query:
                 out = out[start:end + 1]        # PostgREST's range is inclusive at both ends
             if self._limit is not None:
                 out = out[:self._limit]
-            # head=True asks for the count without the body — used for cheap totals.
-            return _Result([] if self._head else out, count=total)
+            return _Result(out, count=total)
         if self._op == "insert":
             items = self._payload if isinstance(self._payload, list) else [self._payload]
             rows.extend(dict(i) for i in items)

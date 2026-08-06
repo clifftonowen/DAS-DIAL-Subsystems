@@ -81,14 +81,27 @@ class LearnerRepository(BaseRepository):
     def count(self, *, caseload_only: bool = False) -> int:
         """How many learners, without transferring them.
 
-        `head=True` asks PostgREST for the count header and no body. The dashboard used to do
-        `len(list_all())`, which both moved the whole table and — past 1,000 rows — reported the
-        cap instead of the truth.
+        `count="exact"` puts the total in the Content-Range header, and `.limit(1)` keeps the
+        body to a single row — PostgREST counts the whole FILTERED set regardless of the limit,
+        so the number is still the truth. The dashboard used to do `len(list_all())`, which both
+        moved the whole table and, past 1,000 rows, reported the cap instead.
+
+        NOT `head=True`, which reads better and does exist in newer postgrest — but not in
+        0.16.11, the version `supabase==2.7.4` pins. See `count_query()`.
         """
-        query = self.db.select("id", count="exact", head=True)
+        return self._count_query(caseload_only=caseload_only).execute().count or 0
+
+    def _count_query(self, *, caseload_only: bool = False):
+        """A count-only select, in the dialect postgrest 0.16.11 actually speaks.
+
+        Kept in one place because getting it wrong fails only against the REAL driver: the
+        in-memory double is hand-written and once accepted `head=`, so unit tests passed while
+        every e2e run died with `select() got an unexpected keyword argument 'head'`.
+        """
+        query = self.db.select("id", count="exact").limit(1)
         if caseload_only:
             query = query.eq("on_caseload", True)
-        return query.execute().count or 0
+        return query
 
     def list_page(
         self,
@@ -105,7 +118,7 @@ class LearnerRepository(BaseRepository):
         the list), then by name, then by student id for the unnamed cohort rows.
         """
         total = self._filtered(
-            self.db.select("id", count="exact", head=True), query, caseload_only
+            self.db.select("id", count="exact").limit(1), query, caseload_only
         ).execute().count or 0
 
         rows = (

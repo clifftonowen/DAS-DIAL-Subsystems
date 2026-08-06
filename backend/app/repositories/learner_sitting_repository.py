@@ -75,5 +75,10 @@ class LearnerSittingRepository(BaseRepository):
         return len(rows)
 
     def count(self) -> int:
-        """How many sittings are stored, without transferring them — the ingest's audit line."""
-        return self.db.select("id", count="exact", head=True).execute().count or 0
+        """How many sittings are stored, without transferring them — the ingest's audit line.
+
+        `count="exact"` + `.limit(1)`, not `head=True`: the latter reads better but does not
+        exist in postgrest 0.16.11, which is what `supabase==2.7.4` pins. PostgREST counts the
+        whole set regardless of the limit, so one row on the wire still gives the true total.
+        """
+        return self.db.select("id", count="exact").limit(1).execute().count or 0

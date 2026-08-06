@@ -203,7 +203,7 @@ class SittingPoint(BaseModel):
     semester: str
     band: Optional[str] = None
     band_group: Optional[str] = None
-    source: str = "workbook"            # 'workbook' | 'upload'
+    source: str = "workbook"            # 'workbook' (ingest) | 'upload' (UC1) | 'seed'
 
     phonics: Optional[float] = None
     word_reading_accuracy: Optional[float] = None

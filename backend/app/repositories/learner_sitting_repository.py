@@ -4,9 +4,11 @@ The score history behind the profile page's line chart. Different grain from `le
 holds one row per person with their CURRENT marks: the workbook carries ~22,892 sittings for
 5,783 students across nine semesters, and the ingest writes all of them here.
 
-TWO WRITERS, ONE TABLE:
+THREE WRITERS, ONE TABLE:
     the ingest       `source='workbook'`, upserting the whole workbook on (learner_id, semester)
     UC1's upload     `source='upload'`, appending one sitting when a therapist confirms
+    infra/seed.sql   `source='seed'`, three sittings for each of the ten mock learners, so a
+                     project that cannot run the ingest still has a chart to draw
 
 `upsert_many` is the contract between them. Whichever wrote last, `latest_for_learner` finds the
 newest and ProfilingService promotes it onto the learner — so an uploaded assessment reaches the

@@ -61,8 +61,9 @@ create table if not exists learner_sittings (
   word_spelling_pct         real,
   writing_pct               real,
 
-  -- 'workbook' | 'upload'. UC1's confirm step writes 'upload' rows; the ingest writes
-  -- 'workbook'. Generate Profile promotes whichever is newest, so the two paths converge here.
+  -- 'workbook' | 'upload' | 'seed'. The ingest writes 'workbook', UC1's confirm step writes
+  -- 'upload', infra/seed.sql writes 'seed' for its ten mock learners. Generate Profile
+  -- promotes whichever is newest, so every path converges here.
   source text not null default 'workbook',
   created_at timestamptz default now(),
 

@@ -122,7 +122,10 @@ create table if not exists learner_sittings (
   word_spelling_pct         real,
   writing_pct               real,
 
-  source text not null default 'workbook',  -- 'workbook' | 'upload' (UC1 writes the latter)
+  -- 'workbook' (the ingest) | 'upload' (UC1's confirm step) | 'seed' (infra/seed.sql's
+  -- ten mock learners). Provenance only — nothing branches on it, but it is how you tell
+  -- a demo row from a real mark.
+  source text not null default 'workbook',
   created_at timestamptz default now(),
   unique (learner_id, semester)             -- the ingest's upsert key
 );

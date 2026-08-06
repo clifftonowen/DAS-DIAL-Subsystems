@@ -1,6 +1,6 @@
 """Request/response DTOs for the API layer."""
 from typing import Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 
 
 class Credentials(BaseModel):
@@ -53,6 +53,14 @@ class ReviewIn(BaseModel):
     activity_id: str
     text: str
     status: str | None = None
+
+    @field_validator("text")
+    @classmethod
+    def text_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Review text must not be empty")
+        return value
 
 
 class ShareIn(BaseModel):

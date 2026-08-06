@@ -8,6 +8,10 @@ is the retrieval gate the caller uses to short-circuit before ever reaching the 
 """
 from __future__ import annotations
 
+from app.ingestion.dial_features import (
+    FEATURE_LABELS, FEATURE_MAXIMA, PLOT_FEATURES, normalised_score,
+)
+
 INSUFFICIENT_CONTEXT = "INSUFFICIENT_CONTEXT"  # sentinel the model must emit when grounding is thin
 MIN_SIMILARITY = 0.50  # top-chunk cosine similarity below this => refuse without calling the LLM.
 # Tuned to nomic-embed-text's narrow score band: out-of-domain queries land ~0.42, real matches
@@ -53,13 +57,58 @@ def format_context(chunks: list[dict]) -> str:
     return "\n\n---\n\n".join(_fmt_chunk(i, c) for i, c in enumerate(chunks, 1))
 
 
+def _fmt_mark(profile: dict, key: str) -> str | None:
+    """One DIAL metric as 'Phonics 31/46 = 6.2/10 (58 pct)', or None if never assessed.
+
+    All three figures earn their place, and they are not substitutes:
+
+      31/46      the mark actually awarded, against the rubric a therapist knows
+      6.2/10     the normalised score — the ONLY one comparable across the four, since phonics
+                 is out of 46 and word reading out of 10, and the one build_query ranked on to
+                 choose what this activity targets. Stating it keeps the prompt and the query
+                 telling the model the same story.
+      58 pct     where that sits among the learner's band peers, which neither of the others say
+
+    KEYED ON THE MARK, not the percentile, matching build_query — a learner whose ingest predates
+    the percentile columns has a real mark and should be described, not silently dropped.
+    """
+    raw = profile.get(key)
+    score = normalised_score(key, raw)
+    if score is None:
+        return None  # not assessed. Say nothing: absent is not the same as weak.
+    out = f"{FEATURE_LABELS[key]} {raw:g}/{FEATURE_MAXIMA[key]:g} = {score:.1f}/10"
+    pct = profile.get(f"{key}_pct")
+    return f"{out} ({pct:g} pct)" if isinstance(pct, (int, float)) else out
+
+
+def _fmt_profile(profile: dict) -> str:
+    """The learner's four DIAL marks, and nothing else. Empty string if none were assessed.
+
+    A WHITELIST, deliberately, not a blacklist. `learners` carries 26 columns — pseudonym,
+    student_id, tier, age, school_level, cluster labels, timestamps — and completions go to a
+    hosted model, so everything interpolated here leaves the machine. Naming what may leave is
+    the only version of this that stays correct when someone adds a column to the table.
+
+    Band group rides along because it is the rubric the raw marks should be read against, and
+    the percentiles are ranked within it.
+    """
+    marks = [m for m in (_fmt_mark(profile, key) for key in PLOT_FEATURES) if m]
+    if not marks:
+        return ""
+    band = profile.get("band_group")
+    head = f"Learner marks (band {band})" if band else "Learner marks"
+    return f"{head}: " + "; ".join(marks)
+
+
 def _fmt_request(params: dict, profile: dict | None) -> str:
-    """The request line: the filters/notes the activity should target, plus profile if given."""
+    """The request line: the filters/notes the activity should target, plus marks if given."""
     fields = {k: v for k, v in params.items() if v}
     req = ", ".join(f"{k}={v}" for k, v in fields.items()) or "(no specific filters)"
     lines = [f"Request: {req}"]
     if profile:
-        lines.append(f"Learner profile: {profile}")
+        summary = _fmt_profile(profile)
+        if summary:  # a learner with no marks at all adds no line, not an empty header
+            lines.append(summary)
     return "\n".join(lines)
 
 

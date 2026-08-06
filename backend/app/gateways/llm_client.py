@@ -1,9 +1,15 @@
-"""LLMApiClient - singleton wrapper over a swappable LLM provider.
+"""LLMApiClient - singleton facade over TWO independently swappable providers.
 
-Completion + embedding both flow through this one object, so the underlying model
-(Ollama, OpenAI, ...) can be replaced in a single place. Every caller just does
-`LLMApiClient()` and gets the same shared instance; the active backend is chosen by
-`settings.llm_provider`. Swap it there, or at runtime via `LLMApiClient.use_provider(...)`.
+Completion and embedding are separate jobs with separate backends, chosen by
+`settings.llm_provider` and `settings.embedding_provider`. That split is the point: generation
+can run on a hosted model (Gemini) while embeddings stay local (Ollama), because the embedding
+model is far more expensive to change — curriculum_chunks is vector(768) and
+activity_prompts.MIN_SIMILARITY is tuned to nomic-embed-text's score band, so swapping it means
+a migration, a full re-embed, and a re-tuned gate. Swapping the generation model costs nothing.
+
+Every caller does `LLMApiClient()` and gets the same shared instance; no caller knows which
+backend is active. Adding one is a class implementing LLMProvider plus a branch in
+_build_completion_provider(). Tests override BOTH roles at once via `use_provider(...)`.
 """
 from __future__ import annotations
 
@@ -14,7 +20,11 @@ from app.core.config import settings
 
 
 class LLMProvider(Protocol):
-    """Contract every swappable backend implements."""
+    """Contract every swappable backend implements.
+
+    One protocol covers both roles even though a provider may only serve one (Gemini does
+    generation only): a single fake can then stand in for the whole facade in tests.
+    """
 
     embed_dim: int
 
@@ -74,11 +84,82 @@ class OllamaProvider:
         return vectors
 
 
+class GeminiProvider:
+    """Google Gemini backend — GENERATION ONLY, over the REST API via httpx.
+
+    Raw httpx rather than an SDK, to match OllamaProvider above: httpx is already a dependency
+    and the request shape is a dozen lines. Gemini embeddings are deliberately not wired, so
+    embed_many() raises instead of quietly returning vectors the corpus cannot be compared to.
+    """
+
+    def __init__(self) -> None:
+        self.base_url = settings.gemini_base_url.rstrip("/")
+        self.model = settings.gemini_model
+        self.api_key = settings.gemini_api_key
+        self.temperature = settings.gemini_temperature
+
+    def complete(self, prompt: str, system: str | None = None,
+                 temperature: float | None = None, seed: int | None = None) -> str:
+        import httpx  # lazy: only when a real completion is requested
+
+        # Raise rather than return placeholder prose (cf. OpenAIProvider below): a generated
+        # activity is persisted, so a silent stub would be stored as real curriculum content.
+        if not self.api_key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is not set — cannot generate. Set it in .env, or switch "
+                "generation back to local with LLM_PROVIDER=ollama."
+            )
+
+        config: dict = {"temperature": self.temperature if temperature is None else temperature}
+        if seed is not None:
+            config["seed"] = seed  # best-effort: Gemini does not guarantee Ollama-style repeats
+        payload: dict = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": config,
+        }
+        if system:
+            payload["systemInstruction"] = {"parts": [{"text": system}]}
+
+        resp = httpx.post(
+            f"{self.base_url}/models/{self.model}:generateContent",
+            headers={"x-goog-api-key": self.api_key},
+            json=payload,
+            timeout=120.0,
+        )
+        resp.raise_for_status()
+        return _gemini_text(resp.json())
+
+    # ── embeddings: not this provider's job ──────────────────────────────
+    @property
+    def embed_dim(self) -> int:
+        raise NotImplementedError(_GEMINI_NO_EMBED)
+
+    def embed_many(self, texts: list[str]) -> list[list[float]]:
+        raise NotImplementedError(_GEMINI_NO_EMBED)
+
+
+_GEMINI_NO_EMBED = (
+    "Gemini is wired for generation only — set EMBEDDING_PROVIDER=ollama. The stored corpus is "
+    "768-dim nomic-embed-text; embedding with another model would make every vector incomparable."
+)
+
+
+def _gemini_text(body: dict) -> str:
+    """First candidate's text. Empty string when the model returned no content (e.g. a safety
+    block or a finishReason with no parts) — callers already treat empty output as a refusal."""
+    candidates = body.get("candidates") or []
+    if not candidates:
+        return ""
+    parts = (candidates[0].get("content") or {}).get("parts") or []
+    return "".join(p.get("text", "") for p in parts)
+
+
 class OpenAIProvider:
     """OpenAI backend via langchain-openai. Falls back to zero-vectors when no API key
     is configured, so the app stays bootable in dev and dry-run paths never need one."""
 
     embed_dim = 1536  # text-embedding-3-small; matches vector(1536) in schema.sql
+    embedding_model = settings.embedding_model
 
     def complete(self, prompt: str, system: str | None = None,
                  temperature: float | None = None, seed: int | None = None) -> str:
@@ -99,20 +180,37 @@ def _openai_embeddings():
     return OpenAIEmbeddings(model=settings.embedding_model, api_key=settings.openai_api_key)
 
 
+COMPLETION_PROVIDERS = {"ollama": OllamaProvider, "gemini": GeminiProvider, "openai": OpenAIProvider}
+EMBEDDING_PROVIDERS = {"ollama": OllamaProvider, "openai": OpenAIProvider}  # no gemini: see above
+
+
 @lru_cache(maxsize=1)
-def _build_provider() -> LLMProvider:
+def _build_completion_provider() -> LLMProvider:
     """Instantiate the provider named by settings.llm_provider (cached)."""
     name = settings.llm_provider.lower()
-    if name == "ollama":
-        return OllamaProvider()
-    if name == "openai":
-        return OpenAIProvider()
-    raise ValueError(f"Unknown llm_provider: {settings.llm_provider!r} (expected 'ollama' or 'openai')")
+    if name not in COMPLETION_PROVIDERS:
+        raise ValueError(
+            f"Unknown llm_provider: {settings.llm_provider!r} "
+            f"(expected one of {sorted(COMPLETION_PROVIDERS)})"
+        )
+    return COMPLETION_PROVIDERS[name]()
+
+
+@lru_cache(maxsize=1)
+def _build_embedding_provider() -> LLMProvider:
+    """Instantiate the provider named by settings.embedding_provider (cached)."""
+    name = settings.embedding_provider.lower()
+    if name not in EMBEDDING_PROVIDERS:
+        raise ValueError(
+            f"Unknown embedding_provider: {settings.embedding_provider!r} "
+            f"(expected one of {sorted(EMBEDDING_PROVIDERS)})"
+        )
+    return EMBEDDING_PROVIDERS[name]()
 
 
 class LLMApiClient:
-    """Singleton facade. `LLMApiClient()` always returns the same instance, delegating
-    to the currently active provider."""
+    """Singleton facade. `LLMApiClient()` always returns the same instance; completion calls go
+    to the completion provider and embedding calls to the embedding provider, which may differ."""
 
     _instance: "LLMApiClient | None" = None
     _override: LLMProvider | None = None
@@ -123,16 +221,26 @@ class LLMApiClient:
         return cls._instance
 
     @property
-    def provider(self) -> LLMProvider:
-        return type(self)._override or _build_provider()
+    def completion_provider(self) -> LLMProvider:
+        return type(self)._override or _build_completion_provider()
+
+    @property
+    def embedding_provider(self) -> LLMProvider:
+        return type(self)._override or _build_embedding_provider()
 
     @property
     def embed_dim(self) -> int:
-        return self.provider.embed_dim
+        return self.embedding_provider.embed_dim
+
+    @property
+    def embedding_model(self) -> str:
+        """Name of the model that actually produces the vectors — the only honest value for
+        curriculum_chunks.embedding_model now that the two backends can differ."""
+        return getattr(self.embedding_provider, "embedding_model", "")
 
     def complete(self, prompt: str, system: str | None = None,
                  temperature: float | None = None, seed: int | None = None) -> str:
-        return self.provider.complete(prompt, system, temperature=temperature, seed=seed)
+        return self.completion_provider.complete(prompt, system, temperature=temperature, seed=seed)
 
     def embed(self, text: str) -> list[float]:
         return self.embed_many([text])[0]
@@ -140,11 +248,13 @@ class LLMApiClient:
     def embed_many(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        return self.provider.embed_many(list(texts))
+        return self.embedding_provider.embed_many(list(texts))
 
     @classmethod
     def use_provider(cls, provider: LLMProvider | None) -> None:
-        """Swap the backend at runtime (tests / manual override). Pass None to revert
-        to the settings-configured provider."""
+        """Swap the backend at runtime (tests / manual override). One provider stands in for
+        BOTH roles, so a single fake covers the whole facade. Pass None to revert to the
+        settings-configured providers."""
         cls._override = provider
-        _build_provider.cache_clear()
+        _build_completion_provider.cache_clear()
+        _build_embedding_provider.cache_clear()

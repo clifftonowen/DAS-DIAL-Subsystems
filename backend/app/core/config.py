@@ -10,8 +10,20 @@ class Settings(BaseSettings):
     supabase_key: str = ""          # service-role key, backend only
     supabase_jwt_secret: str = ""   # used to verify auth tokens
 
-    # LLM — swap the whole backend by changing llm_provider ("ollama" | "openai")
-    llm_provider: str = "ollama"
+    # LLM — completion and embedding are selected SEPARATELY, so generation can move to a hosted
+    # model while embeddings stay local. Embedding defaults to ollama and should stay there:
+    # curriculum_chunks is vector(768) (nomic-embed-text) and activity_prompts.MIN_SIMILARITY is
+    # tuned to that model's score band, so changing it silently invalidates both.
+    llm_provider: str = "ollama"          # completion: "ollama" | "gemini" | "openai"
+    embedding_provider: str = "ollama"    # embeddings: "ollama" | "openai"
+
+    # Gemini backend (generation only — Gemini embeddings are deliberately not wired)
+    gemini_api_key: str = ""
+    # gemini-2.5-pro is listed by the models endpoint but 404s on generateContent for keys
+    # issued after it closed to new users — pick a model, then verify it actually answers.
+    gemini_model: str = "gemini-3.5-flash"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    gemini_temperature: float = 0.0
 
     # OpenAI backend
     openai_api_key: str = ""

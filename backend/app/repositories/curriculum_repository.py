@@ -17,22 +17,41 @@ class CurriculumRepository(BaseRepository):
             return []
         return self.db.upsert(rows).execute().data
 
+    def count_by_band_group(self, band_group: str) -> int:
+        """How many lesson-plan chunks exist for a band LETTER, without transferring them.
+
+        Only called on the refusal path, to tell "no curriculum has been ingested for this band"
+        apart from "the band has curriculum but nothing matched" — two very different things to
+        tell a therapist. `like` rather than `eq` for the same reason as filter_band_group: band A
+        is stored as 'A' plus 'A1'/'A2'/'A3'.
+        """
+        return (
+            self.db.select("id", count="exact")
+            .eq("doc_type", "lesson_plan")
+            .like("band", f"{band_group}%")
+            .limit(1)
+            .execute()
+            .count or 0
+        )
+
     def match_curriculum(
         self,
         query_vector: list[float],
         band: str | None = None,
+        band_group: str | None = None,
         concept: str | None = None,
         stage: str | None = None,
         match_count: int = 3,
     ) -> list[dict]:
         """Metadata-filtered vector retrieval (pure semantic; kept for A/B + fallback)."""
-        return match_curriculum_rpc(query_vector, band, concept, stage, match_count)
+        return match_curriculum_rpc(query_vector, band, band_group, concept, stage, match_count)
 
     def hybrid_match_curriculum(
         self,
         query_vector: list[float],
         query_text: str,
         band: str | None = None,
+        band_group: str | None = None,
         concept: str | None = None,
         stage: str | None = None,
         match_count: int = 3,
@@ -42,12 +61,12 @@ class CurriculumRepository(BaseRepository):
     ) -> list[dict]:
         """Hybrid retrieval: vector + full-text fused by RRF (see hybrid_match_curriculum RPC)."""
         return hybrid_match_curriculum_rpc(
-            query_vector, query_text, band, concept, stage,
+            query_vector, query_text, band, band_group, concept, stage,
             match_count, rrf_k, full_text_weight, semantic_weight,
         )
 
 
-def match_curriculum_rpc(query_vector, band, concept, stage, match_count):
+def match_curriculum_rpc(query_vector, band, band_group, concept, stage, match_count):
     from app.core.supabase_client import get_supabase
     return (
         get_supabase()
@@ -56,6 +75,7 @@ def match_curriculum_rpc(query_vector, band, concept, stage, match_count):
             {
                 "query_embedding": query_vector,
                 "filter_band": band,
+                "filter_band_group": band_group,
                 "filter_concept": concept,
                 "filter_stage": stage,
                 "match_count": match_count,
@@ -67,7 +87,7 @@ def match_curriculum_rpc(query_vector, band, concept, stage, match_count):
 
 
 def hybrid_match_curriculum_rpc(
-    query_vector, query_text, band, concept, stage,
+    query_vector, query_text, band, band_group, concept, stage,
     match_count, rrf_k, full_text_weight, semantic_weight,
 ):
     from app.core.supabase_client import get_supabase
@@ -79,6 +99,7 @@ def hybrid_match_curriculum_rpc(
                 "query_embedding": query_vector,
                 "query_text": query_text,
                 "filter_band": band,
+                "filter_band_group": band_group,
                 "filter_concept": concept,
                 "filter_stage": stage,
                 "match_count": match_count,

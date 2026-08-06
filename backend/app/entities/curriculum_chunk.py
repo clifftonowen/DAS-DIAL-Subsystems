@@ -73,7 +73,7 @@ class CurriculumChunk(BaseModel):
     sequence_no: int = 1                     # Practice worksheet 1 vs 2 vs 3 — required
     doc_type: str = "lesson_plan"            # 'lesson_plan' | 'resource'
     writing_traits: list[str] = []           # 6+1, lowercased; optional filter (63% coverage)
-    cognitive_constructs: list[str] = []     # bridge to learner_profiles' seven floats
+    cognitive_constructs: list[str] = []     # construct tags; see ingestion/constants.py
 
     # content (fed to the LLM after retrieval)
     activity_title: str | None = None        # body heading; best discriminator on metadata ties

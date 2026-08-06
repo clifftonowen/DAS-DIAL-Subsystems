@@ -91,9 +91,11 @@ export default function Graph({ onSelectLearner }) {
         // filtering happens in `visible` below, not at load.
         const built = learners.map((learner) => {
           const row = {
-            id: learner.id,
-            name: learner.id,          // the cohort is anonymised — the id IS the name
-            learnerId: learner.learner_id ?? null,
+            id: learner.id,                     // learners.id — a uuid, always present
+            // A caseload learner has a real name; the research cohort is anonymised, so their
+            // workbook id is the only identity they have.
+            name: learner.pseudonym || learner.student_id || learner.id,
+            onCaseload: Boolean(learner.on_caseload),
             bandLevel: learner.band || "—",
             bandGroup: learner.band_group ?? null,
             writingGenre: learner.writing_genre ?? null,

@@ -33,7 +33,7 @@ class Session(BaseModel):
 
 
 class GenerationParams(BaseModel):
-    """Body of POST /activities/{profile_id}/generate.
+    """Body of POST /activities/{learner_id}/generate.
 
     Every field is optional: with an empty body the service derives the retrieval
     query from the learner's profile alone. band/concept/stage are the curriculum
@@ -106,13 +106,17 @@ class CohortLearner(BaseModel):
     Any score may be null — `writing` is absent for band A entirely — and the frontend drops a
     point from the plot when the axis it needs is missing.
     """
-    id: str                          # anonymised student id, e.g. 'Student 0001'
+    id: str                          # learners.id — a uuid, and ALWAYS present
+    # The anonymised workbook id, e.g. 'Student 0001'. Null for a learner created in the app.
+    student_id: Optional[str] = None
+    # Empty for cohort rows — the research cohort has no names. The table falls back to
+    # student_id, which is the only identity those learners have.
+    pseudonym: str = ""
+    # Whether this is one of the therapist's own learners. Only they carry assessment records,
+    # so only they can be profiled. Informational only — every learner can now be profiled.
+    on_caseload: bool = False
     band: Optional[str] = None       # fine band, A1..C9
     band_group: Optional[str] = None
-    # Set only where a cohort student is also on the therapist's caseload. The cluster table
-    # links the name to LearnerDetailPage only when this is present, because GET /learners/{id}
-    # would 404 for a cohort-only student.
-    learner_id: Optional[str] = None
 
     # BOTH clustering scopes travel together and the dashboard picks one — the toggle must not
     # need a round trip, and the two are the same 5,783 rows read once.
@@ -158,3 +162,128 @@ class CohortClusters(BaseModel):
     # label, but those with no band group have no band label. One number would be wrong for
     # one of the two views.
     unclustered: dict[str, int] = {}
+
+
+# ── Merged learner view — GET /learners/{id}/overview (UC2) ──────────────────
+class DialMetric(BaseModel):
+    """One DIAL assessment mark, in the two forms the profile page needs at once.
+
+    `raw` out of `max` is the mark the therapist reads and the number that goes in the legend.
+    `percentile` is what the radar chart's radius can actually carry: the four marks are scored
+    on different rubrics (phonics /46, word reading /10) AND the rubric differs by band — phonics
+    tops out at 25 in A1 and 46 in A3 — so neither the raw mark nor percent-of-max is comparable
+    across the axes of one chart. The percentile ranks the learner within their own band group;
+    see infra/migrations/2026-08-06_score_percentiles.sql.
+
+    `assessed` is NOT `raw is not None` restated for convenience — it is the distinction the
+    chart turns on. Writing is never administered to band A, so 2,084 learners have no writing
+    mark, and drawing them at zero would assert they scored nothing on a paper they never sat.
+    The radar drops an unassessed axis instead of plotting it.
+    """
+    key: str                            # a PLOT_SKILLS key, e.g. 'phonics'
+    label: str
+    raw: Optional[float] = None
+    max: float                          # top of the rubric — served so the UI keeps no second copy
+    percentile: Optional[float] = None  # 0-100, within band_group
+    assessed: bool = False
+
+
+class SittingPoint(BaseModel):
+    """One learner's marks in one semester — a point on the profile page's line chart.
+
+    Carries the RAW marks and their percentiles side by side because the chart's scale toggle
+    switches between them: the four rubrics are not comparable to each other (phonics /46, word
+    reading /10), so plotting them together needs percentiles, while reading one metric on its
+    own wants the mark that was actually awarded.
+
+    `band` belongs to the SITTING, not the learner. Phonics is out of 30 in band A2 and 46 in
+    A3, so a learner who moves band mid-history has marks that are not on one scale — which is
+    the deeper reason the percentile view exists.
+    """
+    semester: str
+    band: Optional[str] = None
+    band_group: Optional[str] = None
+    source: str = "workbook"            # 'workbook' | 'upload'
+
+    phonics: Optional[float] = None
+    word_reading_accuracy: Optional[float] = None
+    word_spelling: Optional[float] = None
+    writing: Optional[float] = None
+
+    phonics_pct: Optional[float] = None
+    word_reading_accuracy_pct: Optional[float] = None
+    word_spelling_pct: Optional[float] = None
+    writing_pct: Optional[float] = None
+
+
+class LearnerOverview(BaseModel):
+    """Everything LearnerDetailPage needs about one learner, in one call.
+
+    Three things, from two tables:
+
+      identity + current marks   the `learners` row — what the header and radar chart read
+      history                    `learner_sittings`, oldest first — the line chart's series
+
+    NOTHING IS REQUIRED EXCEPT IDENTITY, and the gaps are ordinary rather than error states:
+      metrics all unassessed   the learner has no marks yet (created in the app, never in the
+                               DIAL workbook) — the page offers the upload flow instead
+      history empty            same cause; a learner with exactly ONE sitting is also normal,
+                               and renders as a single point rather than a line
+    Only an unknown learner raises.
+    """
+    learner_id: str
+    pseudonym: str = ""
+    tier: str = ""
+    # Whether this is one of the therapist's own learners. INFORMATIONAL — it drives the
+    # "Caseload" badge, not what the page lets you do. Every learner can be profiled, have an
+    # activity generated and be shared, because a profile is now just their marks.
+    on_caseload: bool = False
+
+    # The DIAL side, straight off the learner row: their CURRENT marks.
+    metrics: list[DialMetric] = []
+
+    # Every sitting on record, oldest first. Rides along rather than sitting behind its own
+    # endpoint because the page always wants both, and at most ten rows is nothing on the wire.
+    history: list[SittingPoint] = []
+    student_id: Optional[str] = None    # anonymised workbook id, null for app-created learners
+    semester: Optional[str] = None      # which sitting the marks come from
+    band: Optional[str] = None          # fine band, A1..C9
+    band_group: Optional[str] = None    # the population `percentile` is ranked against
+    cluster_band: Optional[str] = None
+    cluster_cohort: Optional[str] = None
+
+
+# ── Learner list — GET /learners (UC2) ───────────────────────────────────────
+class LearnerListItem(BaseModel):
+    """One card in the Learners tab.
+
+    Deliberately thin. The list can span the whole table, so every field here is multiplied by
+    the page size on the wire and by the row count in the count query — the detail page fetches
+    the rest when a card is actually opened.
+    """
+    id: str
+    student_id: Optional[str] = None
+    # Empty for cohort rows; the card falls back to student_id, their only identity.
+    pseudonym: str = ""
+    tier: str = ""
+    on_caseload: bool = False
+    band: Optional[str] = None
+    band_group: Optional[str] = None
+    cluster_cohort: Optional[str] = None
+
+
+class LearnerPage(BaseModel):
+    """Response of GET /learners — one page, plus enough to render a pager.
+
+    PAGED BECAUSE THE TABLE IS LARGE. Since the 2026-08-07 merge `learners` holds the whole DAS
+    cohort as well as the caseload, and PostgREST caps a select at 1,000 rows and truncates
+    WITHOUT erroring — the old bare-array response would have silently served a sixth of the
+    table while looking perfectly healthy.
+
+    `total` counts everything matching the CURRENT filters, not the table, so the pager can say
+    "1-24 of 137" for a search as readily as "1-24 of 5,783" for the default view.
+    """
+    items: list[LearnerListItem] = []
+    total: int = 0
+    page: int = 1
+    per_page: int = 24

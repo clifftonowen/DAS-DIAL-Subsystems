@@ -2,13 +2,14 @@
 
 Curriculum-grounded RAG, the same flow `scripts.generate_activity` runs from the CLI:
 
-    learner_profiles row -> retrieval query -> curriculum_chunks (hybrid RRF)
+    learner's DIAL marks -> retrieval query -> curriculum_chunks (hybrid RRF)
       -> similarity gate -> guardrailed prompt -> LLM -> learning_activities row
 
 The learner's profile IS the input. The caller passes an id, never scores, so the
 query is always derived server-side from the stored profile.
 """
-from app.repositories.learner_profile_repository import LearnerProfileRepository
+from app.ingestion.dial_features import FEATURE_LABELS, PLOT_FEATURES
+from app.repositories.learner_repository import LearnerRepository
 from app.repositories.activity_repository import ActivityRepository
 from app.services.curriculum_retrieval_service import CurriculumRetrievalService
 from app.gateways.llm_client import LLMApiClient
@@ -17,50 +18,50 @@ from app.prompts.activity_prompts import (
     build_activity_prompt, model_refused, top_similarity,
 )
 
-# The seven cognitive dimensions ProfilingAlgorithm scores — these are columns on
-# learner_profiles, not free-form keys, so the ordering below is stable.
-PROFILE_DIMENSIONS = (
-    "phonological_processing", "decoding", "spelling", "comprehension",
-    "working_memory", "executive_functioning", "visualisation",
-)
-WEAKEST_N = 2  # how many low-scoring dimensions steer the retrieval query
+# The four DIAL marks, which ARE the learner's profile — columns on `learners`, not free-form
+# keys, so the ordering is stable. Replaced the seven derived cognitive dimensions.
+WEAKEST_N = 2  # how many low-scoring metrics steer the retrieval query
 
 
 class ActivityGenerationService:
     def __init__(self):
-        self.profiles = LearnerProfileRepository()
+        self.learners = LearnerRepository()
         self.activities = ActivityRepository()
         self.curriculum = CurriculumRetrievalService()
         self.llm = LLMApiClient()
 
     # ── profile ───────────────────────────────────────────────────────────
-    def load_profile(self, profile_id: str) -> dict | None:
-        """Resolve the route param against learner_profiles.
+    def load_profile(self, learner_id: str) -> dict | None:
+        """The learner row — which IS the profile now that it carries the four marks.
 
-        Tried as a profile id first, then as a learner id: the dashboard's Generate
-        page only has the learner it put on screen, while /profiles/{id}/activities
-        deals in profile ids. Both reach the same row.
+        One lookup, where this used to try a profile id and then fall back to a learner id.
+        There is no separate profile row to resolve against any more.
         """
-        return (
-            self.profiles.find_by_id(profile_id)
-            or self.profiles.find_by_learner(profile_id)
-        )
+        return self.learners.find_by_id(learner_id)
 
     def build_query(self, profile: dict | None, params: dict) -> str:
-        """Turn a profile into the retrieval query: target what the learner is weakest at.
+        """Turn a learner's marks into the retrieval query: target what they are weakest at.
 
-        Scores are 0-1 (higher = stronger), so the lowest dimensions are the need. Any
-        `notes` from the caller are appended as a steer rather than replacing the profile.
+        RANKED ON PERCENTILE, NOT THE RAW MARK. The four rubrics are not comparable — phonics is
+        out of 46 and word reading out of 10 — so sorting raw marks would reliably pick whichever
+        metric happens to be scored out of the smallest number, and every learner would look
+        weakest at word reading. The percentile ranks them within their own band group, which is
+        the only figure that means the same thing across all four.
+
+        A metric with no percentile is skipped rather than treated as zero: unassessed is not
+        weak, and steering a whole activity at a paper the learner never sat would be worse than
+        a thin query. Any `notes` from the caller are appended as a steer rather than replacing
+        the profile.
         """
         parts: list[str] = []
 
         scored = [
-            (dim, profile[dim]) for dim in PROFILE_DIMENSIONS
-            if profile and isinstance(profile.get(dim), (int, float))
+            (key, profile[f"{key}_pct"]) for key in PLOT_FEATURES
+            if profile and isinstance(profile.get(f"{key}_pct"), (int, float))
         ]
         if scored:
             scored.sort(key=lambda kv: kv[1])
-            weakest = [dim.replace("_", " ") for dim, _ in scored[:WEAKEST_N]]
+            weakest = [FEATURE_LABELS[key].lower() for key, _ in scored[:WEAKEST_N]]
             parts.append("literacy activity targeting " + " and ".join(weakest))
 
         for extra in (params.get("literacy_objective"), params.get("notes")):
@@ -72,8 +73,8 @@ class ActivityGenerationService:
         return " — ".join(parts)
 
     # ── generation ────────────────────────────────────────────────────────
-    def generate(self, profile_id: str, params: dict) -> dict:
-        profile = self.load_profile(profile_id)
+    def generate(self, learner_id: str, params: dict) -> dict:
+        profile = self.load_profile(learner_id)
         query = self.build_query(profile, params)
 
         chunks = self.curriculum.retrieve(
@@ -87,7 +88,7 @@ class ActivityGenerationService:
         # Guardrail 1 — refuse before spending an LLM call when grounding is thin.
         best = top_similarity(chunks)
         if not chunks or best is None or best < MIN_SIMILARITY:
-            return self._refusal(profile_id, query, chunks, best)
+            return self._refusal(learner_id, query, chunks, best)
 
         prompt = build_activity_prompt(chunks, self._request_params(params), profile)
         text = self.llm.complete(prompt, system=SYSTEM_PROMPT)
@@ -95,10 +96,10 @@ class ActivityGenerationService:
         # Guardrail 2 — the model can still self-refuse past the similarity gate
         # (an off-topic request whose generic tokens sneak over the threshold).
         if model_refused(text):
-            return self._refusal(profile_id, query, chunks, best, model_text=text)
+            return self._refusal(learner_id, query, chunks, best, model_text=text)
 
         activity = {
-            "profiled": profile["id"] if profile else None,
+            "learner_id": profile["id"] if profile else None,
             "content": {"text": text, "query": query},
             "literacy_objective": params.get("literacy_objective", ""),
             "level": params.get("level") or params.get("band") or "",
@@ -112,11 +113,11 @@ class ActivityGenerationService:
             "content": text,
             "query": query,
             "grounding": [self._chunk_summary(c) for c in chunks],
-            "profile_id": profile["id"] if profile else None,
+            "learner_id": profile["id"] if profile else None,
         }
 
-    def list_activities(self, profile_id: str) -> list[dict]:
-        return self.activities.find_by_profile(profile_id)
+    def list_activities(self, learner_id: str) -> list[dict]:
+        return self.activities.find_by_learner(learner_id)
 
     # ── helpers ───────────────────────────────────────────────────────────
     def _request_params(self, params: dict) -> dict:
@@ -125,7 +126,7 @@ class ActivityGenerationService:
         keys = ("band", "concept", "stage", "level", "literacy_objective", "notes")
         return {k: params[k] for k in keys if params.get(k)}
 
-    def _refusal(self, profile_id, query, chunks, best, model_text=None) -> dict:
+    def _refusal(self, learner_id, query, chunks, best, model_text=None) -> dict:
         """INSUFFICIENT_CONTEXT response. Not persisted — a refusal is not an activity."""
         if model_text is not None:
             reason = "The model judged the retrieved curriculum insufficient for this request."
@@ -142,7 +143,7 @@ class ActivityGenerationService:
             "reason": reason,
             "query": query,
             "grounding": [self._chunk_summary(c) for c in chunks],
-            "profile_id": profile_id,
+            "learner_id": learner_id,
         }
 
     def _chunk_label(self, chunk: dict) -> str:

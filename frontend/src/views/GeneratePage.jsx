@@ -1,13 +1,17 @@
 // GeneratePage.jsx — Interface for generating learning activities.
 // Rendered at route "/generate" inside the Dashboard shell.
 //
-// Search a learner, then generate. The learner's stored profile is the input:
-// the backend derives the retrieval query from their weakest cognitive dimensions,
-// grounds the activity in curriculum_chunks, and refuses (INSUFFICIENT_CONTEXT)
-// rather than inventing one when the corpus does not cover the need. The optional
-// notes field only steers that query — it never replaces the profile.
+// Search a learner, then generate. The learner's DIAL marks are the input: the backend builds
+// the retrieval query from the two they rank LOWEST on by percentile, grounds the activity in
+// curriculum_chunks, and refuses (INSUFFICIENT_CONTEXT) rather than inventing one when the
+// corpus does not cover the need. The optional notes field only steers that query.
+//
+// SEARCH RUNS SERVER-SIDE. `learners` holds the ~5,783-row anonymised research cohort as well
+// as the therapist's own, and PostgREST truncates an unpaged select at 1,000 rows without
+// erroring — so fetching everything and filtering in the browser would search a fraction of
+// the table and look like it was working.
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Button from "../components/Button";
 import ActivityContent from "../components/ActivityContent";
 import { listLearners, generateActivity } from "../lib/api";
@@ -23,30 +27,39 @@ export default function GeneratePage() {
 
   const dropdownRef = useRef(null);
 
+  // One request per settled query, not per keystroke, and never for an empty box — the
+  // dropdown only opens once you have typed something.
   useEffect(() => {
-    async function loadLearners() {
-      try {
-        const data = await listLearners();
-        const formatted = data.map(l => ({
-          ...l,
-          name: l.pseudonym || l.name,
-          band: l.band_level || l.band,
-          tier: l.tier || "Tier 2",
-          initial: (l.pseudonym || l.name || "?").charAt(0).toUpperCase(),
-          color: ['#FF2E45', '#FFCA28', '#2563EB', '#22A06B', '#7C3AED'][Math.floor(Math.random() * 5)]
-        }));
-        setLearners(formatted);
-      } catch (err) {
-        console.error("Failed to load learners for generation page", err);
-      }
+    const text = query.trim();
+    if (!text || selectedStudent?.name === text) {
+      setLearners([]);
+      return undefined;
     }
-    loadLearners();
-  }, []);
+    const timer = setTimeout(async () => {
+      try {
+        // caseload:false so the research cohort is searchable too — every learner has marks,
+        // so every learner can have an activity generated for them.
+        const data = await listLearners({ q: text, perPage: 20, caseload: false });
+        setLearners(
+          (data.items || []).map((l) => ({
+            ...l,
+            // A cohort learner is anonymised; their workbook id is the only name they have.
+            name: l.pseudonym || l.student_id || "Unknown",
+            band: l.band || (l.band_group ? `Band ${l.band_group}` : "—"),
+            tier: l.tier || (l.on_caseload ? "Tier 2" : "DAS cohort"),
+            initial: (l.pseudonym || l.student_id || "?").charAt(0).toUpperCase(),
+          }))
+        );
+      } catch (err) {
+        console.error("Failed to search learners", err);
+        setLearners([]);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, selectedStudent]);
 
-  // Filter students based on search query
-  const matches = query.trim()
-    ? learners.filter((s) => (s.name || "").toLowerCase().includes(query.toLowerCase()))
-    : [];
+  // The server already filtered; this is just what came back.
+  const matches = learners;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -81,8 +94,8 @@ export default function GeneratePage() {
     setIsGenerating(true);
     setResult(null);
     try {
-      // The learner id is enough — the backend resolves it to their learner_profiles
-      // row and builds the query from it. Band is passed only when it matches the
+      // The learner id is enough — the backend reads their four DIAL marks and builds the
+      // query from the two they rank lowest on. Band is passed only when it matches the
       // curriculum's own vocabulary; any other value would filter the corpus to
       // nothing and turn every request into a refusal.
       const band = /^A[123]$/.test(selectedStudent.band || "") ? selectedStudent.band : undefined;
@@ -99,7 +112,11 @@ export default function GeneratePage() {
   // Refusals come back 200 with a status, not as thrown errors — the request
   // succeeded, the corpus just did not cover this learner's need.
   const refused = result?.status === "INSUFFICIENT_CONTEXT";
-  const noProfile = refused && !result.profile_id;
+  // An EMPTY QUERY is the signal that the learner has no marks to steer with — build_query
+  // returns "" when no metric has a percentile and the therapist left the notes blank, and the
+  // similarity gate then refuses rather than letting the LLM invent from nothing. Checking the
+  // query rather than an id: every request carries a learner id now, so that told us nothing.
+  const noScores = refused && !result.query;
 
   return (
     <div className="mx-auto mt-10 w-full max-w-2xl">
@@ -210,11 +227,11 @@ export default function GeneratePage() {
       {refused && (
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
           <p className="font-medium">
-            {noProfile ? "This learner has no profile yet" : "Not enough curriculum grounding"}
+            {noScores ? "This learner has no assessment scores yet" : "Not enough curriculum grounding"}
           </p>
           <p className="mt-1 text-sm">
-            {noProfile
-              ? "Generate a profile from their assessments first — the activity is built from it."
+            {noScores
+              ? "The activity is built from their DIAL marks, and there are none on record. Upload an assessment for them first."
               : result.reason}
           </p>
           {result.query && (

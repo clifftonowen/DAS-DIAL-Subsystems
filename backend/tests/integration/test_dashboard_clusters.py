@@ -3,8 +3,8 @@
 Bottom-up call graph, continuing the PM3 UC2 plan's numbering past IT-2.11:
 
     Level 1 (repository + Supabase)
-        IT-2.12  LearnerScoreRepository.list_cohort — ordering and round trips
-        IT-2.13  LearnerScoreRepository.list_cohort — paging past PostgREST's 1,000 cap
+        IT-2.12  LearnerRepository.list_cohort — ordering and round trips
+        IT-2.13  LearnerRepository.list_cohort — paging past PostgREST's 1,000 cap
         IT-2.14  ClusteringRunRepository.latest_by_scope_and_tier
     Level 2 (service + both repositories + Supabase)
         IT-2.15  CohortService.get_clusters
@@ -14,22 +14,28 @@ Bottom-up call graph, continuing the PM3 UC2 plan's numbering past IT-2.11:
         IT-2.18  ... empty cohort and the auth guard
         IT-2.19  ... the two clustering scopes kept distinct
 
-Real router, real CohortService, real LearnerScoreRepository and ClusteringRunRepository.
-Only the driver underneath is faked. That is the point: the reshape from learner_scores rows
-to the dashboard's payload, and the paging that keeps the cohort whole, both live in the
-wiring between those layers and are invisible to a unit test that mocks the repository.
+Real router, real CohortService, real LearnerRepository and ClusteringRunRepository.
+Only the driver underneath is faked. That is the point: the reshape from `learners` rows to the
+dashboard's payload, and the paging that keeps the cohort whole, both live in the wiring between
+those layers and are invisible to a unit test that mocks the repository.
 """
 import pytest
 
-from app.repositories.learner_score_repository import PAGE, LearnerScoreRepository
+from app.repositories.learner_repository import PAGE, LearnerRepository
 from app.services.cohort_service import CohortService
 
 pytestmark = pytest.mark.integration
 
 
 def score_row(student_id, cluster="B 2", cohort="Cohort 2", **overrides):
+    """A research-cohort learner: anonymised, so no pseudonym and not on the caseload.
+
+    `id` is derived from student_id purely so these fixtures read clearly — in the real table it
+    is a generated uuid, and nothing here depends on its shape.
+    """
     return {
-        "student_id": student_id, "learner_id": None, "band": "B4", "band_group": "B",
+        "id": f"uuid-{student_id}", "student_id": student_id, "pseudonym": "",
+        "on_caseload": False, "band": "B4", "band_group": "B",
         "cluster_band": cluster, "cluster_cohort": cohort, "writing_genre": "narrative_writing",
         "phonics": 20.0, "word_reading_accuracy": 8.0, "word_spelling": 5.0, "writing": 12.0,
         **overrides,
@@ -49,13 +55,17 @@ def run_row(tier="B", scope="band", **overrides):
 def test_returns_the_cohort_with_its_clusters(client, auth_ok, fake_supabase):
     """IT-2.16: the whole cohort and its labels over HTTP."""
     fake_supabase(seed={
-        "learner_scores": [score_row("Student 0001"), score_row("Student 0002", cluster="B 3")],
+        "learners": [score_row("Student 0001"), score_row("Student 0002", cluster="B 3")],
         "clustering_runs": [run_row()],
     })
 
     body = client.get("/dashboard/clusters").json()
 
-    assert [l["id"] for l in body["learners"]] == ["Student 0001", "Student 0002"]
+    # `id` is the uuid every learner now has; `student_id` is the anonymised workbook key the
+    # cluster table shows when there is no pseudonym. Both travel, because the frontend needs
+    # the first to open a profile and the second to label the row.
+    assert [l["student_id"] for l in body["learners"]] == ["Student 0001", "Student 0002"]
+    assert all(l["id"] for l in body["learners"])
     # BOTH scopes travel together so the dashboard's toggle costs no round trip.
     assert [l["cluster_band"] for l in body["learners"]] == ["B 2", "B 3"]
     assert [l["cluster_cohort"] for l in body["learners"]] == ["Cohort 2", "Cohort 2"]
@@ -67,7 +77,7 @@ def test_reports_how_k_was_chosen(client, auth_ok, fake_supabase):
     """IT-2.16: the silhouette sweep reaches the client."""
     # The sweep is the evidence that k was derived rather than configured — the dashboard
     # caption reads straight off it.
-    fake_supabase(seed={"learner_scores": [score_row("S1")], "clustering_runs": [run_row()]})
+    fake_supabase(seed={"learners": [score_row("S1")], "clustering_runs": [run_row()]})
 
     run = client.get("/dashboard/clusters").json()["runs"][0]
 
@@ -82,7 +92,7 @@ def test_one_run_per_scope_and_tier_newest_first(client, auth_ok, fake_supabase)
     # Ingest appends rather than overwrites, so an older fit for the same key must not
     # surface alongside the current one.
     fake_supabase(seed={
-        "learner_scores": [score_row("S1")],
+        "learners": [score_row("S1")],
         "clustering_runs": [
             run_row("Cohort", scope="cohort", k=4, created_at="2026-08-06T10:00:00Z"),
             run_row("A", k=5, created_at="2026-08-05T10:00:00Z"),
@@ -105,7 +115,7 @@ def test_a_cohort_and_a_band_run_can_share_a_tier_name(client, auth_ok, fake_sup
     silently dropping one of the two clusterings from the caption.
     """
     fake_supabase(seed={
-        "learner_scores": [score_row("S1")],
+        "learners": [score_row("S1")],
         "clustering_runs": [
             run_row("A", scope="cohort", k=3, created_at="2026-08-06T10:00:00Z"),
             run_row("A", scope="band", k=5, created_at="2026-08-06T10:00:00Z"),
@@ -122,7 +132,7 @@ def test_a_run_written_before_the_scope_column_reads_as_band(client, auth_ok, fa
     stale = run_row("A", k=5)
     del stale["scope"]
 
-    fake_supabase(seed={"learner_scores": [score_row("S1")], "clustering_runs": [stale]})
+    fake_supabase(seed={"learners": [score_row("S1")], "clustering_runs": [stale]})
 
     assert client.get("/dashboard/clusters").json()["runs"][0]["scope"] == "band"
 
@@ -133,7 +143,7 @@ def test_unclustered_learners_are_counted_not_hidden(client, auth_ok, fake_supab
     # count is per scope — a single number would be wrong for one of the two views, and the
     # dashboard's "n hidden" line would lie in whichever view it got wrong.
     fake_supabase(seed={
-        "learner_scores": [
+        "learners": [
             score_row("S1"),
             score_row("S2", cluster=None, band_group=None, band=None),
         ],
@@ -153,7 +163,7 @@ def test_a_skill_the_learner_never_sat_stays_null(client, auth_ok, fake_supabase
     # Writing is never administered to band A. Null must survive to the frontend as null:
     # coerced to 0 it would plant the learner at the bottom of the writing axis.
     fake_supabase(seed={
-        "learner_scores": [score_row("S1", band_group="A", band="A3",
+        "learners": [score_row("S1", band_group="A", band="A3",
                                      writing=None, writing_genre=None, cluster="A 2")],
         "clustering_runs": [run_row("A")],
     })
@@ -165,25 +175,32 @@ def test_a_skill_the_learner_never_sat_stays_null(client, auth_ok, fake_supabase
     assert learner["word_spelling"] == 5.0
 
 
-def test_learner_id_is_carried_through_for_caseload_students(client, auth_ok, fake_supabase):
-    """IT-2.17: the caseload link survives to the client."""
-    # Only a learner linked to the caseload can open LearnerDetailPage; the Table gates the
-    # name button on exactly this field.
+def test_caseload_learners_are_marked_and_named(client, auth_ok, fake_supabase):
+    """IT-2.17: the scatter plots both populations and tells them apart.
+
+    The caseload learner is a point like any other — same clusters, same axes — but the cluster
+    table shows their real name and badges the row, and the detail page uses `on_caseload` to
+    decide whether to offer the actions that need assessment records.
+    """
     fake_supabase(seed={
-        "learner_scores": [score_row("S1", learner_id="11111111-1111-1111-1111-111111111111"),
-                           score_row("S2")],
+        "learners": [
+            score_row("S1", pseudonym="Aisha Binti Rahman", on_caseload=True),
+            score_row("S2"),
+        ],
         "clustering_runs": [run_row()],
     })
 
     learners = client.get("/dashboard/clusters").json()["learners"]
 
-    assert learners[0]["learner_id"] == "11111111-1111-1111-1111-111111111111"
-    assert learners[1]["learner_id"] is None
+    assert learners[0]["on_caseload"] is True
+    assert learners[0]["pseudonym"] == "Aisha Binti Rahman"
+    assert learners[1]["on_caseload"] is False
+    assert learners[1]["pseudonym"] == "", "the research cohort is anonymised"
 
 
 def test_empty_cohort_is_an_empty_payload_not_an_error(client, auth_ok, fake_supabase):
     """IT-2.18: nothing ingested yet is an empty 200, not a failure."""
-    fake_supabase(seed={"learner_scores": [], "clustering_runs": []})
+    fake_supabase(seed={"learners": [], "clustering_runs": []})
 
     response = client.get("/dashboard/clusters")
 
@@ -195,7 +212,7 @@ def test_empty_cohort_is_an_empty_payload_not_an_error(client, auth_ok, fake_sup
 def test_requires_authentication(client, fake_supabase):
     """IT-2.18: the endpoint is behind current_therapist."""
     # No auth_ok fixture, so the real current_therapist dependency runs.
-    fake_supabase(seed={"learner_scores": [score_row("S1")]})
+    fake_supabase(seed={"learners": [score_row("S1")]})
     assert client.get("/dashboard/clusters").status_code in (401, 403)
 
 
@@ -208,7 +225,7 @@ def test_cohort_larger_than_one_page_comes_back_whole(client, auth_ok, fake_supa
     """
     total = PAGE * 2 + 137
     fake_supabase(seed={
-        "learner_scores": [score_row(f"Student {i:05d}") for i in range(total)],
+        "learners": [score_row(f"Student {i:05d}") for i in range(total)],
         "clustering_runs": [run_row()],
     })
 
@@ -223,20 +240,20 @@ def test_paging_reads_in_a_stable_order(fake_supabase):
     # Without an explicit sort the pages may overlap or skip rows, so ordering is not
     # cosmetic here — it is what makes the loop correct.
     fake = fake_supabase(seed={
-        "learner_scores": [score_row(f"Student {i:05d}") for i in reversed(range(PAGE + 10))]})
+        "learners": [score_row(f"Student {i:05d}") for i in reversed(range(PAGE + 10))]})
 
-    ids = [row["student_id"] for row in LearnerScoreRepository().list_cohort()]
+    ids = [row["student_id"] for row in LearnerRepository().list_cohort()]
 
     assert ids == sorted(ids)
 
 
 def test_a_short_first_page_makes_only_one_round_trip(fake_supabase):
     """IT-2.12: a cohort under one page costs a single round trip."""
-    fake = fake_supabase(seed={"learner_scores": [score_row("S1"), score_row("S2")]})
+    fake = fake_supabase(seed={"learners": [score_row("S1"), score_row("S2")]})
 
-    LearnerScoreRepository().list_cohort()
+    LearnerRepository().list_cohort()
 
-    assert len(fake.queries_on("learner_scores")) == 1
+    assert len(fake.queries_on("learners")) == 1
 
 
 # ── service in isolation from HTTP ────────────────────────────────────────────
@@ -247,12 +264,12 @@ def test_service_maps_both_label_columns(fake_supabase):
     scope in the service layer, and the toggle could then only reach the other by refetching.
     """
     fake_supabase(seed={
-        "learner_scores": [score_row("S1", cluster="C 1", cohort="Cohort 3")],
+        "learners": [score_row("S1", cluster="C 1", cohort="Cohort 3")],
         "clustering_runs": [],
     })
 
     result = CohortService().get_clusters()
 
-    assert result.learners[0].id == "S1"
+    assert result.learners[0].student_id == "S1"
     assert result.learners[0].cluster_band == "C 1"
     assert result.learners[0].cluster_cohort == "Cohort 3"

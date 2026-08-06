@@ -1,11 +1,11 @@
-"""Band-book parser — 'Name of Activity:' body delimiter (A1/A2/A3, B1/B2/B3 band books).
+"""Band-book parser — 'Name of Activity:' body delimiter (the A1/A2/A3 band books).
 
-These books (2_A1, 3_A2, 4_A3 and their Band B equivalents) start each activity with a
-'Name of Activity:' line in the body. A new chunk begins at every such line; pages after it
+These books ('2) A1.pdf', '3) A2.pdf', '4) A3.pdf' and any later equivalents) start each activity
+with a 'Name of Activity:' line in the body. A new chunk begins at every such line; pages after it
 belong to the same activity until the next delimiter (carry-forward of the activity name).
 
-The band LETTER comes from the source folder (passed in by the registry); only the sub-band
-digit is read from the filename, so a Band B book can never be labelled A1.
+The band LETTER comes from the source folder (passed in by the registry); the level, if the
+filename names one, from bands.band_from_filename — so a Band B book can never be labelled A1.
 
 Front matter before the first delimiter (cover/TOC, no activity name) is not emitted as a chunk.
 """

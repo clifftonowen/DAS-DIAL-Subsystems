@@ -66,7 +66,8 @@ class CurriculumChunk(BaseModel):
     id: UUID = Field(default_factory=uuid4)
 
     # filters (indexed, used in WHERE)
-    band: str                                # 'A1' | 'A2' | 'A3' (finer than learners.band_level)
+    band: str                                # 'A' | 'B' | 'C' (== learners.band_group), or the
+                                             # levelled 'A1'|'A2'|'A3' for the three band books
     module: str | None = None                # 'Barebone Sentence' | 'Predicate Expanders'
     concept: str                             # 'action_predicate' | 'all' | ... curriculum join key
     stage: str | None = None                 # 'presentation' | 'practice' | ...

@@ -1,33 +1,17 @@
 // constants.js — Shared constants for the dashboard prototype
 
-export const SKILL_LABELS = {
-  phonological: 'Phonological Processing',
-  decoding: 'Decoding',
-  spelling: 'Spelling',
-  comprehension: 'Comprehension',
-  workingMemory: 'Working Memory',
-  executive: 'Executive Functioning',
-  visualisation: 'Visualisation',
-};
-
-// Maps to the Tailwind brand.chart-* colours in tailwind.config.js
-export const SKILL_COLORS = {
-  phonological: '#FF2E45',   // chart-1
-  decoding: '#FFCA28',       // chart-2
-  spelling: '#2563EB',       // chart-3
-  comprehension: '#22A06B',  // chart-4
-  workingMemory: '#7C3AED',  // chart-5
-  executive: '#EC4899',      // chart-6
-  visualisation: '#F97316',  // chart-7
-};
+// The seven cognitive dimensions that used to live here are gone. They were mock scaffolding
+// derived by keyword-matching subtest names; the system standardises on the four marks DAS
+// actually measures, which are PLOT_SKILLS below. See
+// infra/migrations/2026-08-08_dial_dimensions.sql.
 
 // ── Plottable axes — the cohort scatter in Graph.jsx ─────────────────────────
 // THE SINGLE SWAP POINT. Graph.jsx hardcodes no skill names at all: the dropdowns,
 // the default axes and the row-building loop are all generated from this map, so
 // changing it changes the whole UI.
 //
-// These are the literacy skills on `learner_scores`, served by GET /dashboard/clusters.
-// `field` names the column in that response.
+// These are the four DIAL marks on `learners`, served by GET /dashboard/clusters and
+// GET /learners/{id}/overview. `field` names the column in those responses.
 //
 // `max` is the top of the rubric, and the axis range comes from it. Scores are plotted
 // RAW rather than normalised to 0–100, because the marks are what a therapist reads: a
@@ -46,10 +30,6 @@ export const SKILL_COLORS = {
 // Writing is also plottable but NOT clustered — it is never administered to band A, so
 // it is absent for 2,084 of 5,783 students. See backend/app/ingestion/dial_workbook.py.
 //
-// `label` overlaps with SKILL_LABELS above, deliberately duplicated rather than shared:
-// SKILL_LABELS keys the seven cognitive constructs on learner_profiles that drive
-// LearnerDetailPage's radar chart, which is a different taxonomy on different data.
-//
 // No colour per entry, on purpose: these are continuous, so they live on the axes
 // and are named by the dropdown labels. Colour is reserved for clusters, below.
 export const PLOT_SKILLS = {
@@ -61,6 +41,24 @@ export const PLOT_SKILLS = {
 
 // Dropdown order, and the source of Graph.jsx's default X/Y/Z (the first three).
 export const SKILL_KEYS = Object.keys(PLOT_SKILLS);
+
+// ── DIAL radar chart — LearnerDetailPage's "DIAL Assessment" card ────────────
+// The same four features as PLOT_SKILLS, on the profile page instead of the cohort scatter.
+// ONLY the colours live here: the label, the rubric max and the percentile all arrive from
+// GET /learners/{id}/overview, so the rubric is not written down twice (see
+// backend/app/ingestion/dial_features.py, which is where those come from).
+//
+// The radar plots the PERCENTILE WITHIN THE LEARNER'S BAND GROUP, not the raw mark. A radar
+// shares one radius across every axis, and the four marks are neither on the same rubric
+// (phonics /46, word reading /10) nor on the same rubric across bands (phonics tops out at 25
+// in A1 and 46 in A3) — so raw marks and percent-of-max are both uncomparable between axes.
+// The legend still shows the mark that was actually awarded.
+export const DIAL_METRIC_COLORS = {
+  phonics: '#FF2E45',
+  word_reading_accuracy: '#2563EB',
+  word_spelling: '#22A06B',
+  writing: '#F97316',
+};
 
 // ── Clustering scopes — the scatter's first control ──────────────────────────
 // Two independent k-means models are stored per learner and both arrive in one response, so

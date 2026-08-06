@@ -58,36 +58,22 @@ import pandas as pd
 SHEET = "Anonymised_Data"
 
 # ── Feature groups ───────────────────────────────────────────────────────────
-# What k-means actually sees. Complete for all 5,783 students, so every learner gets a label.
-CLUSTER_FEATURES: tuple[str, ...] = (
-    "phonics",
-    "word_reading_accuracy",
-    "word_spelling",
+# Defined in `dial_features`, which carries no pandas import, so the running API can name these
+# features and their rubric ceilings without pulling in an analysis-only dependency. Re-exported
+# here because this module is where the notebook and the ingest script have always imported them
+# from — see that module's docstring for why the two are split.
+from app.ingestion.dial_features import (  # noqa: E402,F401  (re-export)
+    CLUSTER_FEATURES,
+    FEATURE_LABELS,
+    FEATURE_MAXIMA,
+    GENRE_COLUMNS,
+    PERCENTILE_COLUMNS,
+    PLOT_FEATURES,
+    SCORE_COLUMNS,
+    UNBANDED,
 )
 
-# What the dashboard offers as scatter axes: the three above plus `writing`. Writing is
-# plottable but NOT clustered — it is absent for band A entirely (see BAND_GROUP below), so
-# including it would both drop 2,084 learners and, before band scoping, act as a proxy for
-# band membership. Four axes give the three dropdowns a real choice; three would not.
-PLOT_FEATURES: tuple[str, ...] = CLUSTER_FEATURES + ("writing",)
-
-# The raw genre columns behind `writing`. Read to build it, stored for provenance, never
-# clustered on individually — see the module docstring.
-GENRE_COLUMNS: tuple[str, ...] = (
-    "narrative_writing",
-    "exposition_writing",
-    "persuasive_writing",
-)
-
-# Every numeric column carried through to learner_scores.
-SCORE_COLUMNS: tuple[str, ...] = CLUSTER_FEATURES + GENRE_COLUMNS + ("fluency_mark",)
-
-# Sentinel for a student whose NewBand is missing or unrecognised. Kept as a group of its own
-# rather than dropped: they are real learners, and a separate small fit is more honest than
-# folding them into a band whose test they may not have sat.
-UNBANDED = "?"
-
-# ── Workbook header -> learner_scores column ─────────────────────────────────
+# ── Workbook header -> `learners` column ─────────────────────────────────
 # The workbook's own spelling on the left; nothing downstream should ever see the left-hand
 # names, so this map is the only place they appear.
 COLUMN_MAP: dict[str, str] = {
@@ -117,7 +103,7 @@ _EXCEL_EPOCH = pd.Timestamp("1899-12-30")
 
 
 def load_workbook(path: str | Path) -> pd.DataFrame:
-    """The whole workbook, renamed to learner_scores columns. One row per sitting."""
+    """The whole workbook, renamed to `learners` columns. One row per sitting."""
     raw = pd.read_excel(path, sheet_name=SHEET)
 
     missing = [c for c in COLUMN_MAP if c not in raw.columns]
@@ -145,24 +131,47 @@ def load_workbook(path: str | Path) -> pd.DataFrame:
     return df
 
 
-def latest_per_student(df: pd.DataFrame) -> pd.DataFrame:
-    """Reduce sittings to one row per student — the most recent one.
+def _latest_by(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
+    """The last row per `keys`, under one shared ordering rule.
+
+    THE ORDERING IS THE WHOLE POINT, and both callers must share it or the cohort and the
+    history could disagree about which of a student's two rows in one semester is real.
 
     Recency is the `semester` string. Those sort chronologically as text ("2022 Sem 1" <
     "2022 Sem 2" < "2023 Sem 1"), which holds for every value in the workbook and keeps the
     rule readable; there is no date column that covers all rows.
 
-    Ties (a student with two rows in one semester — 22 such pairs) fall through to the latest
-    subtest date, then to workbook order. Both tie-breaks are deterministic, so re-running the
-    ingest can never reshuffle who is in which cluster.
+    Ties — a student with TWO rows in one semester, of which the workbook has 22 pairs — fall
+    through to the latest subtest date, then to workbook order. Both tie-breaks are
+    deterministic, so re-running the ingest can never reshuffle who is in which cluster.
     """
     ordered = (
         df.reset_index(names="_row")
           .sort_values(["student_id", "semester", "_sitting_date", "_row"],
                        na_position="first", kind="stable")
     )
-    latest = ordered.groupby("student_id", as_index=False, sort=True).tail(1)
+    latest = ordered.groupby(keys, as_index=False, sort=True).tail(1)
     return latest.drop(columns=["_row", "_sitting_date"]).reset_index(drop=True)
+
+
+def latest_per_student(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per student — their most recent sitting. The cohort as clustering sees it."""
+    return _latest_by(df, ["student_id"])
+
+
+def latest_per_semester(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per student PER SEMESTER — the score history, deduplicated.
+
+    NOT the same as the raw workbook. Those 22 tie pairs are two rows for one student in one
+    semester, and `learner_sittings` is keyed on exactly that pair: sending both makes Postgres
+    refuse the whole batch with
+
+        ON CONFLICT DO UPDATE command cannot affect row a second time
+
+    which names no student and no semester. Resolving them here, with the same tie-break
+    `latest_per_student` uses, means the history and the cohort agree about which row won.
+    """
+    return _latest_by(df, ["student_id", "semester"])
 
 
 def load_latest_per_student(path: str | Path) -> pd.DataFrame:
@@ -193,6 +202,54 @@ def coverage(df: pd.DataFrame, features: tuple[str, ...] = PLOT_FEATURES) -> pd.
             for f in features
         ]
     )
+
+
+def percentiles(
+    df: pd.DataFrame,
+    features: tuple[str, ...] = PLOT_FEATURES,
+    by: tuple[str, ...] = ("band_group",),
+) -> pd.DataFrame:
+    """One `<feature>_pct` column per feature — the learner's percentile within `by`.
+
+    TWO CALLERS, TWO POPULATIONS, and the difference matters:
+
+      by=("band_group",)              the cohort as the dashboard sees it — one row per student,
+                                      their latest sitting, ranked against everyone in their band
+      by=("semester", "band_group")   one row per SITTING, ranked against everyone who sat that
+                                      same paper that same semester
+
+    The second is what the profile page's progress line needs. Ranking a 2022 mark against the
+    2026 population would make the line move as the cohort around the learner changes rather
+    than as the learner does, which is the opposite of what a progress chart is for.
+
+    WHY A PERCENTILE AT ALL. The radar chart shares one radius across all four axes, so it
+    cannot plot raw marks: phonics is out of 46, word reading out of 10. Nor can it plot
+    percent-of-max,
+    because the rubric itself differs by band — phonics tops out at 25 in A1, 30 in A2 and 46 in
+    A3 (see WHY CLUSTERING IS SCOPED TO A BAND GROUP above). 67% of a band A1 paper and 67% of a
+    band A3 paper are not the same achievement, and a radar that drew them at the same radius
+    would say they were.
+
+    Percentile within `band_group` is the same fix, for the same reason, as scoping the k-means
+    fit to a band group: it compares each learner against the population that sat their paper.
+
+    Computed here at ingest, not per request. The API is a plain SELECT over stored columns —
+    the same rule the cluster labels follow — so rendering one learner's radar never reads the
+    other 5,782 rows.
+
+    NaN in, NaN out: a learner not assessed on a feature (band A and writing, 2,084 of them) has
+    no percentile, exactly as `_collapse_writing` leaves them no mark. `rank` skips NaN natively.
+    """
+    out = pd.DataFrame(index=df.index)
+    # dropna=False so a learner with no band group is still ranked — against the other unbanded
+    # learners, which is a small population but an honest one. Dropping them would leave those
+    # rows with no percentile at all and silently unplottable.
+    grouped = df.groupby(list(by), dropna=False)
+    for f in features:
+        # pct=True gives 0 < rank <= 1 within the group; "average" (the default) is the right
+        # tie-break for coarse rubric marks, where dozens of learners share a score.
+        out[f"{f}_pct"] = (grouped[f].rank(pct=True) * 100).round(1)
+    return out
 
 
 def writing_genre_audit(df: pd.DataFrame) -> pd.Series:

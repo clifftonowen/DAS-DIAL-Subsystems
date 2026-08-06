@@ -1,7 +1,7 @@
 // UNIT (frontend) — GeneratePage renders the three outcomes of a generation request.
 //
-// The API module is mocked, so this asserts the page's contract with the backend:
-// it sends the selected learner's id (the profile is resolved server-side) and
+// The API module is mocked, so this asserts the page's contract with the backend: it searches
+// SERVER-SIDE, sends the selected learner's id (their marks are read server-side) and
 // distinguishes a grounded activity from a 200-with-refusal from a thrown error.
 
 import { render, screen, waitFor } from "@testing-library/react";
@@ -14,7 +14,7 @@ jest.mock("../../lib/api", () => ({
   generateActivity: jest.fn(),
 }));
 
-const LEARNER = { id: "learner-1", pseudonym: "Ali", band_level: "A1" };
+const LEARNER = { id: "learner-1", pseudonym: "Ali", band: "A1", on_caseload: true };
 
 // Type the learner's name, pick them from the dropdown, then hit Generate.
 async function selectAndGenerate(user) {
@@ -25,7 +25,7 @@ async function selectAndGenerate(user) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  listLearners.mockResolvedValue([LEARNER]);
+  listLearners.mockResolvedValue({ items: [LEARNER], total: 1, page: 1, per_page: 20 });
 });
 
 test("sends the learner id and renders the activity with its grounding sources", async () => {
@@ -34,7 +34,7 @@ test("sends the learner id and renders the activity with its grounding sources",
     status: "GENERATED",
     content: "Title: Rhyme Time\n1. Clap the rhyme.",
     query: "literacy activity targeting decoding and spelling",
-    profile_id: "profile-1",
+    learner_id: "learner-1",
     grounding: [
       { title: "Rhyme Time", source: "a.pdf", page: 4, concept: "onset_rime",
         stage: "practice", similarity: 0.712 },
@@ -59,7 +59,7 @@ test("shows the refusal reason when the curriculum does not cover the request", 
     content: "",
     reason: "best similarity 0.310 is below the 0.5 gate.",
     query: "literacy activity targeting decoding and spelling",
-    profile_id: "profile-1",
+    learner_id: "learner-1",
     grounding: [],
   });
 
@@ -70,18 +70,18 @@ test("shows the refusal reason when the curriculum does not cover the request", 
   expect(screen.getByText(/below the 0.5 gate/)).toBeInTheDocument();
 });
 
-test("tells the therapist to profile the learner when no profile row exists", async () => {
+test("tells the therapist to upload scores when the learner has none", async () => {
   const user = userEvent.setup();
   generateActivity.mockResolvedValue({
     status: "INSUFFICIENT_CONTEXT", content: "", reason: "…",
-    query: "", profile_id: null, grounding: [],
+    query: "", learner_id: "learner-1", grounding: [],
   });
 
   render(<GeneratePage />);
   await selectAndGenerate(user);
 
-  expect(await screen.findByText("This learner has no profile yet")).toBeInTheDocument();
-  expect(screen.getByText(/Generate a profile from their assessments first/)).toBeInTheDocument();
+  expect(await screen.findByText("This learner has no assessment scores yet")).toBeInTheDocument();
+  expect(screen.getByText(/there are none on record/)).toBeInTheDocument();
 });
 
 test("surfaces a failed request separately from a refusal", async () => {

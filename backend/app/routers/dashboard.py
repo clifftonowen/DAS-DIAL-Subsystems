@@ -20,11 +20,11 @@ class DashboardRepository(BaseRepository):
         inactive = 1
         total_learners = 5
 
-        # Counted through LearnerRepository so learner access stays in one place.
+        # A count(), not len(list_all()). `learners` now holds the whole DAS cohort as well as
+        # the caseload, and PostgREST caps a select at 1,000 rows without erroring — so the old
+        # `len(rows)` would have reported 1,000 forever and moved the whole table to do it.
         try:
-            rows = self.learners.list_all()
-            if rows is not None:
-                total_learners = len(rows)
+            total_learners = self.learners.count()
         except Exception:
             pass
 
@@ -91,7 +91,7 @@ def get_cohort_clusters(_: str = Depends(current_therapist)):
 
     One call rather than one per learner: Graph.jsx previously fetched /learners then a profile
     per learner, which at cohort scale is thousands of requests. The k-means labels are already
-    columns on learner_scores — see scripts/ingest_dial_data.py — so this is a paged SELECT.
+    columns on `learners` — see scripts/ingest_dial_data.py — so this is a paged SELECT.
     """
     return cohort_svc.get_clusters()
 

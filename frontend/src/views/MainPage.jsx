@@ -133,14 +133,13 @@ export default function MainPage() {
           reading one from the URL. Closing returns to the graph with its selected
           cluster and camera angle intact.
 
-          `learnerId` is the caseload uuid, NOT the row's `id` — the graph plots the
-          anonymised research cohort, whose ids ("Student 0001") mean nothing to
-          /learners/{id}. Table only makes a row clickable when this is set, so the
-          guard here is belt-and-braces. */}
-      {selectedLearner?.learnerId && (
+          Every plotted learner can be opened: since the merge they are all rows in `learners`
+          with a uuid. A research-cohort learner's page renders read-only — the page decides
+          that from `on_caseload`, not this component. */}
+      {selectedLearner && (
         <Modal onClose={() => setSelectedLearner(null)}>
           <LearnerDetailPage
-            learnerId={selectedLearner.learnerId}
+            learnerId={selectedLearner.id}
             onBack={() => setSelectedLearner(null)}
           />
         </Modal>

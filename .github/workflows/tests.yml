@@ -15,8 +15,11 @@
 #   TEST_THERAPIST_EMAIL      a seeded therapist user in the test project
 #   TEST_THERAPIST_PASSWORD   that user's password
 #   TEST_LEARNER_ID           a learner id from infra/seed.sql, for UC2's e2e test.
-#                             Seed the project first — the learner must exist or the
-#                             FK on learner_profiles.learner_id fails.
+#                             Seed the project first: the learner must exist (FK on
+#                             learner_sittings.learner_id) AND have at least one sitting,
+#                             or generate_profile correctly returns 409 "no scores on
+#                             record" and the test's assert 200 fails. seed.sql gives all
+#                             ten seeded learners three sittings each, so any of them works.
 #
 # Test-project settings that are NOT secrets but the e2e/system tiers depend on:
 #   Authentication -> Providers -> Email -> "Confirm email" must be OFF. With it on,
@@ -94,9 +97,10 @@ jobs:
       # A learner that exists in the test project, for UC2's profile-generation
       # test. Without it that test self-skips and the job reports success having
       # never exercised the use case, so check the -rs output below for skips.
-      # Seed the project (infra/seed.sql) BEFORE setting this secret: the learner
-      # must exist, or the FK on learner_profiles.learner_id fails and the test
-      # goes red instead of skipping.
+      # Seed the project (infra/seed.sql) BEFORE setting this secret. The learner
+      # needs a row in learner_sittings as well as in learners — "Generate Profile"
+      # promotes their newest sitting, and with none it returns 409 rather than
+      # skipping. seed.sql covers both for all ten of its learners.
       TEST_LEARNER_ID: ${{ secrets.TEST_LEARNER_ID }}
     steps:
       - uses: actions/checkout@v4

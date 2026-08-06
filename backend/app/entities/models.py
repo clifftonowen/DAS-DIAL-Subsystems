@@ -63,7 +63,7 @@ class InstructionalStrategy(BaseModel):
 class LearningActivity(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     activity_id: UUID | None = None
-    profiled: UUID | None = None          # learner profile id
+    learner_id: UUID | None = None        # who the activity was generated for
     content: dict = {}
     literacy_objective: str = ""
     level: str = ""

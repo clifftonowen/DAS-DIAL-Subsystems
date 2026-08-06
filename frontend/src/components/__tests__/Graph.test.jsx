@@ -46,9 +46,12 @@ const chip = (name) => screen.getByRole("radio", { name });
 const models = async () => (await screen.findAllByRole("listitem"))[0].closest("ul");
 const modelRow = (name) => within(document.querySelector("ul")).getByText(name).closest("li");
 
-const learner = (id, band, cohort, over = {}) => ({
-  id, cluster_band: band, cluster_cohort: cohort,
-  band: "B4", band_group: "B", learner_id: null,
+// A research-cohort learner: a uuid like everyone else, but anonymised — no pseudonym, not on
+// the caseload. `id` is derived from the student id purely so these fixtures read clearly.
+const learner = (studentId, band, cohort, over = {}) => ({
+  id: `uuid-${studentId}`, student_id: studentId, pseudonym: "", on_caseload: false,
+  cluster_band: band, cluster_cohort: cohort,
+  band: "B4", band_group: "B",
   writing_genre: "narrative_writing",
   phonics: 20, word_reading_accuracy: 8, word_spelling: 5, writing: 12, ...over,
 });
@@ -390,14 +393,15 @@ test("UT-2.33: clicking a legend chip opens that cluster's table only", async ()
   expect(within(table).queryByText("Student 0003")).not.toBeInTheDocument();
 });
 
-test("UT-2.33: only a learner linked to the caseload is clickable", async () => {
-  // GET /learners/{id} would 404 for a cohort-only student, so those names are plain text.
+test("UT-2.33: every learner is clickable, and the row carries the uuid", async () => {
+  // Since the 2026-08-07 merge every plotted learner is a row in `learners` with a uuid, so
+  // every one of them has a detail page — a cohort learner's simply opens read-only.
   const user = userEvent.setup();
   const onSelect = jest.fn();
   getCohortClusters.mockResolvedValue({
     ...RESPONSE,
     learners: [
-      learner("Student 0001", "B 2", "Cohort 2", { learner_id: "uuid-1" }),
+      learner("Student 0001", "B 2", "Cohort 2"),
       learner("Student 0002", "B 2", "Cohort 2"),
     ],
   });
@@ -406,9 +410,60 @@ test("UT-2.33: only a learner linked to the caseload is clickable", async () => 
   await user.click(await screen.findByRole("button", { name: /Cohort 2/ }));
   const table = screen.getByRole("table");
 
-  expect(within(table).getByRole("button", { name: "Student 0001" })).toBeInTheDocument();
-  expect(within(table).queryByRole("button", { name: "Student 0002" })).not.toBeInTheDocument();
+  await user.click(within(table).getByRole("button", { name: "Student 0002" }));
 
-  await user.click(within(table).getByRole("button", { name: "Student 0001" }));
-  expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ learnerId: "uuid-1" }));
+  // The uuid, not the anonymised student id: GET /learners/{id} takes the former and would
+  // 404 on the latter.
+  expect(onSelect).toHaveBeenCalledWith(
+    expect.objectContaining({ id: "uuid-Student 0002", onCaseload: false }));
+});
+
+test("UT-2.33: a caseload learner shows their name and is badged", async () => {
+  // The two populations share the table, so the row has to say which is which: only a caseload
+  // learner has a profile and the actions that go with it.
+  const user = userEvent.setup();
+  getCohortClusters.mockResolvedValue({
+    ...RESPONSE,
+    learners: [
+      learner("Student 0001", "B 2", "Cohort 2",
+              { pseudonym: "Aisha Binti Rahman", on_caseload: true }),
+      learner("Student 0002", "B 2", "Cohort 2"),
+    ],
+  });
+  render(<Graph onSelectLearner={jest.fn()} />);
+
+  await user.click(await screen.findByRole("button", { name: /Cohort 2/ }));
+  const table = screen.getByRole("table");
+
+  expect(within(table).getByRole("button", { name: "Aisha Binti Rahman" })).toBeInTheDocument();
+  expect(within(table).getAllByText("Caseload")).toHaveLength(1);
+  // The anonymised learner falls back to their workbook id — their only identity.
+  expect(within(table).getByRole("button", { name: "Student 0002" })).toBeInTheDocument();
+});
+
+test("UT-2.36: a caseload learner survives the row cap however they scored", async () => {
+  // THE REGRESSION THIS EXISTS FOR. The table caps at 100 rows sorted by the X-axis skill, and
+  // a real cluster holds well over a thousand learners. Being on the caseload has nothing to do
+  // with how a learner scored, so under a plain score sort the therapist's own learners fall
+  // into the truncated remainder — the rows they most need to see are the ones most likely to
+  // be missing, with no error anywhere to say so.
+  const user = userEvent.setup();
+  getCohortClusters.mockResolvedValue({
+    ...RESPONSE,
+    learners: [
+      // Bottom of the cluster on phonics, the default X axis: 150 learners outscore this one,
+      // so a plain score sort puts it well past the 100-row cap.
+      learner("Student 9999", "B 2", "Cohort 2",
+              { pseudonym: "Aisha Binti Rahman", on_caseload: true, phonics: 0 }),
+      ...Array.from({ length: 150 }, (_, i) =>
+        learner(`Student ${String(i).padStart(4, "0")}`, "B 2", "Cohort 2", { phonics: 10 + i })),
+    ],
+  });
+  render(<Graph onSelectLearner={jest.fn()} />);
+
+  await user.click(await screen.findByRole("button", { name: /Cohort 2/ }));
+  const table = screen.getByRole("table");
+
+  expect(within(table).getByRole("button", { name: "Aisha Binti Rahman" })).toBeInTheDocument();
+  expect(screen.getByText(/1 on your caseload, listed first/)).toBeInTheDocument();
 });

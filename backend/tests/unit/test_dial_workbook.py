@@ -4,6 +4,8 @@
     AB2.10  dial_workbook._collapse_writing()        UT-2.23, UT-2.24
     AB2.11  dial_workbook._band_group()              UT-2.25
     AB2.12  dial_workbook.coverage() + feature sets  UT-2.26
+    AB2.18  dial_workbook.percentiles()              UT-2.46, UT-2.47
+    AB2.26  dial_workbook.latest_per_semester()      UT-2.71, UT-2.72
 
 Extends the PM3 UC2 test plan (see test_profiling_algorithm_cluster.py for why).
 
@@ -25,12 +27,15 @@ pd = pytest.importorskip(
 
 from app.ingestion.dial_workbook import (  # noqa: E402  (must follow the importorskip)
     CLUSTER_FEATURES,
+    PERCENTILE_COLUMNS,
     PLOT_FEATURES,
     UNBANDED,
     _band_group,
     _collapse_writing,
     coverage,
+    latest_per_semester,
     latest_per_student,
+    percentiles,
     writing_genre_audit,
 )
 
@@ -188,3 +193,138 @@ def test_writing_is_plottable_but_not_clustered():
     assert "writing" in PLOT_FEATURES
     assert "writing" not in CLUSTER_FEATURES
     assert set(CLUSTER_FEATURES).issubset(PLOT_FEATURES)
+
+
+# ── percentiles ───────────────────────────────────────────────────────────────
+# These feed LearnerDetailPage's radar chart, whose single radius cannot carry the raw marks
+# (different rubrics per axis) nor percent-of-max (different rubric per band).
+def test_percentile_ranks_within_the_band_group_not_the_whole_cohort():
+    """UT-2.46: the comparison population is the band group.
+
+    THE POINT OF THE COLUMN. The bands sit different papers — phonics tops out at 25 in A1 and
+    46 in A3 — so a cohort-wide rank would read "which paper did you sit" as if it were "how
+    are you doing", the same confound that made the band-scoped k-means fit score better.
+    Here band C's marks are all far below band A's, yet the top of each band ranks 100th.
+    """
+    df = frame([
+        {"student_id": "A1", "band": "A2", "phonics": 10.0},
+        {"student_id": "A2", "band": "A2", "phonics": 30.0},
+        {"student_id": "C1", "band": "C8", "phonics": 2.0},
+        {"student_id": "C2", "band": "C8", "phonics": 4.0},
+    ])
+    out = percentiles(df)["phonics_pct"]
+
+    assert list(out) == [50.0, 100.0, 50.0, 100.0]
+
+
+def test_a_mark_the_learner_never_received_has_no_percentile():
+    """UT-2.47: NaN in, NaN out — an unassessed paper is not a rank of zero.
+
+    Writing is never administered to band A. A 0th percentile would say the learner came last
+    on a paper they never sat, and the radar chart reads `writing_pct` to decide whether the
+    axis exists at all.
+    """
+    df = frame([
+        {"student_id": "S1", "band": "A2", "narrative_writing": 12.0},
+        {"student_id": "S2", "band": "A2"},   # all genres 0 -> writing is NaN
+    ])
+    out = percentiles(df)["writing_pct"]
+
+    assert out.iloc[0] == 100.0
+    assert pd.isna(out.iloc[1])
+
+
+def test_the_only_learner_in_a_band_ranks_top_of_it():
+    """UT-2.46: a band group of one is the whole of its own population."""
+    # Degenerate but real: the workbook's three unbanded students group alone. 100 is the
+    # honest answer — they are top of everyone they can be compared with — and the chart's
+    # caption names the population, so it does not read as a cohort-wide claim.
+    df = frame([{"student_id": "S1", "band": "A2", "phonics": 7.0}])
+    assert percentiles(df)["phonics_pct"].iloc[0] == 100.0
+
+
+def test_ties_share_a_percentile():
+    """UT-2.47: equal marks rank equally.
+
+    Not incidental: these are coarse rubric marks (word reading is an integer out of 10), so
+    ties are the common case, not an edge one. Two learners with the same mark must not be
+    separated by row order.
+    """
+    df = frame([
+        {"student_id": "S1", "band": "B4", "word_reading_accuracy": 8.0},
+        {"student_id": "S2", "band": "B4", "word_reading_accuracy": 8.0},
+        {"student_id": "S3", "band": "B4", "word_reading_accuracy": 2.0},
+    ])
+    out = percentiles(df)["word_reading_accuracy_pct"]
+
+    assert out.iloc[0] == out.iloc[1]
+    assert out.iloc[2] < out.iloc[0]
+
+
+def test_one_percentile_column_per_plottable_feature():
+    """UT-2.46: every axis the radar can draw has a rank behind it."""
+    out = percentiles(frame([{"student_id": "S1", "narrative_writing": 9.0}]))
+
+    assert list(out.columns) == list(PERCENTILE_COLUMNS)
+    assert PERCENTILE_COLUMNS == tuple(f"{f}_pct" for f in PLOT_FEATURES)
+
+
+# ── latest_per_semester ───────────────────────────────────────────────────────
+# The history's dedup. `learner_sittings` is keyed on (learner_id, semester), and the workbook
+# holds 22 pairs of rows for one student in one semester.
+def test_one_row_survives_per_student_per_semester():
+    """UT-2.71: THE BUG THIS EXISTS FOR.
+
+    Sending both rows of a tie pair makes Postgres refuse the entire 500-row batch with
+    "ON CONFLICT DO UPDATE command cannot affect row a second time" — an error naming neither
+    the student nor the semester, so nothing in the output points at the cause.
+    """
+    df = frame([
+        {"student_id": "S1", "semester": "2025 Sem 1", "phonics": 1.0},
+        {"student_id": "S1", "semester": "2025 Sem 1", "phonics": 8.0},   # the tie
+        {"student_id": "S1", "semester": "2026 Sem 1", "phonics": 9.0},
+        {"student_id": "S2", "semester": "2025 Sem 1", "phonics": 3.0},
+    ])
+    out = latest_per_semester(df)
+
+    assert len(out) == 3, "one row per (student, semester), not per workbook row"
+    assert not out.duplicated(subset=["student_id", "semester"]).any()
+
+
+def test_the_tie_break_matches_latest_per_student():
+    """UT-2.71: the history and the cohort must agree about which tie row won.
+
+    Both go through the same ordering. If they diverged, a learner's newest point on the chart
+    could carry a different mark from the one the dashboard clusters them on.
+    """
+    df = frame([
+        {"student_id": "S1", "semester": "2026 Sem 1", "phonics": 1.0,
+         "_sitting_date": pd.Timestamp("2026-03-01")},
+        {"student_id": "S1", "semester": "2026 Sem 1", "phonics": 8.0,
+         "_sitting_date": pd.Timestamp("2026-06-01")},
+    ])
+
+    assert latest_per_semester(df).iloc[0]["phonics"] == 8.0
+    assert latest_per_student(df).iloc[0]["phonics"] == 8.0
+
+
+def test_every_semester_is_kept_not_just_the_newest():
+    """UT-2.72: this is a history, not a reduction to the current state.
+
+    The distinction from `latest_per_student`, and the whole reason the chart has an X axis.
+    """
+    df = frame([
+        {"student_id": "S1", "semester": "2022 Sem 1", "phonics": 1.0},
+        {"student_id": "S1", "semester": "2024 Sem 2", "phonics": 5.0},
+        {"student_id": "S1", "semester": "2026 Sem 1", "phonics": 9.0},
+    ])
+
+    assert sorted(latest_per_semester(df).semester) == [
+        "2022 Sem 1", "2024 Sem 2", "2026 Sem 1"]
+    assert len(latest_per_student(df)) == 1, "the cohort keeps only the newest"
+
+
+def test_the_internal_sort_column_does_not_leak():
+    """UT-2.72: `_sitting_date` is a tie-break, not a stored column."""
+    out = latest_per_semester(frame([{"student_id": "S1"}]))
+    assert "_sitting_date" not in out.columns and "_row" not in out.columns

@@ -15,15 +15,22 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_list_learners_returns_200_list(client, access_token):
+def test_list_learners_returns_200_page(client, access_token):
+    """A page object, not a bare array.
+
+    `learners` holds the anonymised DAS research cohort alongside the caseload, so the endpoint
+    pages — PostgREST truncates an unpaged select at 1,000 rows without erroring.
+    """
     resp = client.get("/learners", headers=_auth(access_token))
 
     assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
+    body = resp.json()
+    assert isinstance(body["items"], list)
+    assert isinstance(body["total"], int)
 
 
 def test_learner_detail_roundtrip(client, access_token):
-    listing = client.get("/learners", headers=_auth(access_token)).json()
+    listing = client.get("/learners", headers=_auth(access_token)).json()["items"]
     if not listing:
         pytest.skip("test project has no learners seeded; seed infra/seed.sql to exercise detail")
 
@@ -32,6 +39,18 @@ def test_learner_detail_roundtrip(client, access_token):
 
     assert resp.status_code == 200
     assert resp.json()["id"] == learner_id
+
+
+def test_the_cohort_is_behind_a_flag(client, access_token):
+    """The Learners tab defaults to the caseload, so the cohort must be opt-in.
+
+    Without the default, the tab would open on thousands of anonymised research rows. Asserted
+    against the real project because the two populations only actually differ in size there.
+    """
+    caseload = client.get("/learners", headers=_auth(access_token)).json()
+    everyone = client.get("/learners?caseload=false", headers=_auth(access_token)).json()
+
+    assert everyone["total"] >= caseload["total"]
 
 
 def test_learners_rejected_without_token(client, supabase_env):

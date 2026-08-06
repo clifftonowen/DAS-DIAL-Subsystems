@@ -79,6 +79,23 @@ def test_the_band_travels_with_the_marks(service):
     assert saved[0]["band_group"] == "A"
 
 
+def test_the_response_names_the_learner(service):
+    """UT-2.61: the endpoint's contract — callers key off `learner_id`.
+
+    The WRITE uses `id`, because the row being updated is the learner. The RESPONSE says
+    `learner_id`, because "whose profile is this?" is a question about the learner and that is
+    what /profiles/{id} has always answered with. e2e asserts exactly this key.
+    """
+    svc, _ = service(sitting())
+
+    out = svc.generate_profile(LEARNER_ID)
+
+    assert out["learner_id"] == LEARNER_ID
+    assert out["phonics"] == 31.0
+    assert out["sitting_id"] == "s-2026 Sem 1", "which sitting was promoted, for traceability"
+    assert out["source"] == "workbook", "and where it came from — workbook or an upload"
+
+
 def test_the_sittings_own_identity_is_never_written(service):
     """UT-2.61: `id` is the LEARNER's, and `learner_id` is not a column on `learners`.
 

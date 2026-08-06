@@ -66,9 +66,17 @@ class ProfilingService:
         # Only the promoted columns, never the sitting's own `id` or `learner_id` — writing
         # either would overwrite the learner's identity with the sitting's.
         promoted = {key: latest.get(key) for key in PROMOTED}
-        promoted["id"] = learner_id
-        self.learners.save(promoted)
-        return {**promoted, "source": latest.get("source"), "sitting_id": latest.get("id")}
+        self.learners.save({**promoted, "id": learner_id})
+
+        # `learner_id`, NOT the `id` the write used. The row being updated is the learner, so
+        # `id` is right for the upsert — but a caller asking "whose profile is this?" means the
+        # learner, and the endpoint's contract has always answered with `learner_id`.
+        return {
+            "learner_id": learner_id,
+            **promoted,
+            "source": latest.get("source"),
+            "sitting_id": latest.get("id"),
+        }
 
     def list_sittings(self, learner_id: str) -> list[dict]:
         """The learner's whole score history, oldest first — the line chart's series."""

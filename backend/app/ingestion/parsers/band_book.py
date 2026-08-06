@@ -1,8 +1,11 @@
-"""Band-book parser — 'Name of Activity:' body delimiter (A1/A2/A3 band books).
+"""Band-book parser — 'Name of Activity:' body delimiter (A1/A2/A3, B1/B2/B3 band books).
 
-These books (2_A1, 3_A2, 4_A3) start each activity with a 'Name of Activity:' line in the body.
-A new chunk begins at every such line; pages after it belong to the same activity until the
-next delimiter (carry-forward of the activity name). The band is read from the filename.
+These books (2_A1, 3_A2, 4_A3 and their Band B equivalents) start each activity with a
+'Name of Activity:' line in the body. A new chunk begins at every such line; pages after it
+belong to the same activity until the next delimiter (carry-forward of the activity name).
+
+The band LETTER comes from the source folder (passed in by the registry); only the sub-band
+digit is read from the filename, so a Band B book can never be labelled A1.
 
 Front matter before the first delimiter (cover/TOC, no activity name) is not emitted as a chunk.
 """
@@ -10,6 +13,7 @@ from __future__ import annotations
 import re
 
 from app.entities.curriculum_chunk import Unit
+from app.ingestion.bands import band_from_filename
 from app.ingestion.constants import CONCEPT_ALL, CONCEPT_TO_MODULE, RESOURCE_STAGES
 from app.ingestion.normalise import (
     clean_text,
@@ -23,8 +27,6 @@ from app.ingestion.segment import segment
 
 _NAME_OF_ACTIVITY = "name of activity"
 _NAME_RE = re.compile(r"name of activity:\s*(.+)", re.IGNORECASE)
-_BAND_RE = re.compile(r"A([123])")
-DEFAULT_BAND = "A1"
 
 
 def _activity_name(content: str | None) -> str | None:
@@ -33,12 +35,6 @@ def _activity_name(content: str | None) -> str | None:
     if not m:
         return None
     return clean_text(m.group(1).splitlines()[0]) or None
-
-
-def _band_from_filename(source_file: str) -> str:
-    """'2_A1.pdf' -> 'A1'; default to A1 if no band token is present."""
-    m = _BAND_RE.search(source_file or "")
-    return ("A" + m.group(1)) if m else DEFAULT_BAND
 
 
 class BandBookParser:
@@ -50,8 +46,8 @@ class BandBookParser:
             _NAME_OF_ACTIVITY in (p.content_md or "").lower() for p in doc.pages
         )
 
-    def parse(self, doc: Document) -> list[Unit]:
-        band = _band_from_filename(doc.source_file)
+    def parse(self, doc: Document, band: str = "A") -> list[Unit]:
+        sub_band = band_from_filename(doc.source_file, band)
 
         # Pass 1 — carry the activity name forward across its pages.
         prev_name: str | None = None
@@ -78,7 +74,7 @@ class BandBookParser:
             units.append(
                 Unit(
                     pages=group,
-                    band=band,
+                    band=sub_band,
                     module=CONCEPT_TO_MODULE.get(concept),
                     concept=concept,
                     stage=stage,

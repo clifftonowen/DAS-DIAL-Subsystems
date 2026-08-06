@@ -6,11 +6,14 @@ starts when the (concept, stage, sequence_no) key changes.
 
 Two passes: (1) annotate every page with its normalised stage/seq/concept/title/traits and a
 carried-forward band; (2) segment on the key tuple and build one Unit per run.
+
+The band LETTER comes from the source folder (passed in by the registry); only the sub-band digit
+(1/2/3) is carried forward from the pages, so the same code serves Band A and Band B books.
 """
 from __future__ import annotations
-import re
 
 from app.entities.curriculum_chunk import Unit
+from app.ingestion.bands import band_in_text, default_sub_band
 from app.ingestion.constants import CONCEPT_TO_MODULE, RESOURCE_STAGES
 from app.ingestion.normalise import (
     normalise_stage,
@@ -22,16 +25,14 @@ from app.ingestion.pdf_reader import Document
 from app.ingestion.segment import segment
 
 _NAME_OF_ACTIVITY = "name of activity"
-_BAND_RE = re.compile(r"\bA([123])\b")     # 'A1' | 'A2' | 'A3' token
-DEFAULT_BAND = "A1"                         # Barebone Sentence baseline (spec example)
 
 
-def _detect_band(*texts: str | None) -> str | None:
-    """First A1/A2/A3 token across the given texts, else None."""
+def _detect_band(*texts: str | None, band: str = "A") -> str | None:
+    """First <band>1/2/3 token across the given texts, else None."""
     for text in texts:
-        m = _BAND_RE.search(text or "")
-        if m:
-            return "A" + m.group(1)
+        found = band_in_text(text, band)
+        if found:
+            return found
     return None
 
 
@@ -44,11 +45,11 @@ class ProjectReadParser:
             _NAME_OF_ACTIVITY in (p.content_md or "").lower() for p in doc.pages
         )
 
-    def parse(self, doc: Document) -> list[Unit]:
+    def parse(self, doc: Document, band: str = "A") -> list[Unit]:
         # Pass 1 — annotate pages in reading order (carry-forward is stateful).
         band_by_page: dict[int, str] = {}
         prev_concept: str | None = None
-        prev_band = DEFAULT_BAND
+        prev_band = default_sub_band(band)   # baseline until a page names its sub-band
         for p in doc.pages:
             stage, seq = normalise_stage(p.raw_header)
             p.stage = stage
@@ -59,9 +60,9 @@ class ProjectReadParser:
             concept = resolve_concept(prev_concept, p.activity_title, stage)
             p.concept = concept
             prev_concept = concept
-            band = _detect_band(p.raw_header, p.content_md) or prev_band
-            prev_band = band
-            band_by_page[p.number] = band
+            sub_band = _detect_band(p.raw_header, p.content_md, band=band) or prev_band
+            prev_band = sub_band
+            band_by_page[p.number] = sub_band
 
         # Pass 2 — segment on the key tuple and build one Unit per run.
         groups = segment(

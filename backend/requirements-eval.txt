@@ -1,0 +1,21 @@
+# Offline evaluation harness — evals/run_ragas.py and the golden set loader.
+#   pip install -r requirements.txt -r requirements-eval.txt
+#
+# Deliberately NOT in requirements.txt, for the same reason requirements-analysis.txt exists: the
+# API never runs an evaluation, and `ragas` drags in the whole LangChain stack plus datasets and
+# pandas. requirements.txt's header explicitly rejects the langchain meta-package because it caps
+# numpy below 2 and broke CI at install time — pulling it back in as a transitive dependency of a
+# test-only tool would undo that on every CI run, before a single test executed.
+#
+# NOTE: scripts/calibrate_gate.py and evals/run_retrieval_eval.py need only PyYAML from this file.
+# They are pure arithmetic over ranked ids and deliberately have no LLM dependency, so a gate can
+# be re-derived without installing any of the heavy machinery below.
+PyYAML==6.0.2            # the golden set format — comments matter, it is meant to be hand-edited
+ragas==0.2.6             # faithfulness / answer relevancy / context precision + recall
+langchain-anthropic==0.3.0   # the judge wrapper ragas expects (claude-opus-5)
+datasets==3.0.0          # ragas evaluates over a datasets.Dataset
+pandas==2.2.3            # ragas result frames; pinned to match requirements-analysis.txt
+# NOT optional despite ragas declaring it so: NonLLMContextRecall builds a NonLLMStringSimilarity
+# by default, which imports rapidfuzz at construction time. Without it the metric raises before a
+# single sample is scored.
+rapidfuzz==3.10.1

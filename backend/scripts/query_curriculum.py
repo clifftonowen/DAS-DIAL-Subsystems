@@ -57,7 +57,7 @@ def cmd_query(args: argparse.Namespace) -> int:
 
     results = CurriculumRetrievalService().retrieve(
         args.query, band=args.band, concept=args.concept, stage=args.stage,
-        k=args.k, vector_only=args.vector_only,
+        k=args.k, vector_only=args.vector_only, use_alt=args.use_alt,
     )
     print(format_results(results, full=args.full))
     return 0
@@ -74,6 +74,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--full", action="store_true", help="print full content_md, not a snippet")
     p.add_argument("--vector-only", action="store_true",
                    help="pure vector search (default is hybrid: vector + full-text, RRF)")
+    p.add_argument("--use-alt", action="store_true",
+                   help="rank against embedding_alt (the challenger model). Your EMBEDDING_PROVIDER "
+                        "must match whatever filled that column, or results are confident nonsense")
     p.set_defaults(func=cmd_query)
     return p
 

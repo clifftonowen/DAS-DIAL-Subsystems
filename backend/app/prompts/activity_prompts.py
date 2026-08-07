@@ -8,14 +8,25 @@ is the retrieval gate the caller uses to short-circuit before ever reaching the 
 """
 from __future__ import annotations
 
+from app.core.config import settings
 from app.ingestion.dial_features import (
     FEATURE_LABELS, FEATURE_MAXIMA, PLOT_FEATURES, normalised_score,
 )
 
 INSUFFICIENT_CONTEXT = "INSUFFICIENT_CONTEXT"  # sentinel the model must emit when grounding is thin
-MIN_SIMILARITY = 0.50  # top-chunk cosine similarity below this => refuse without calling the LLM.
-# Tuned to nomic-embed-text's narrow score band: out-of-domain queries land ~0.42, real matches
-# 0.58+. 0.50 sits in the gap so junk is refused and genuine requests pass.
+
+# Top-chunk cosine similarity below this => refuse without calling the LLM.
+#
+# Still imported from here by everything that gates on it, but the VALUE now comes from settings,
+# because it belongs to the embedding model rather than to the prompt. Each model's band:
+#
+#   nomic-embed-text     junk ~0.42, real 0.58+   -> 0.50   (the default in config.py)
+#   gemini-embedding-001 measured with scripts/calibrate_gate.py before use
+#
+# Never carry one model's number over to another: the bands do not merely shift, they have
+# different widths, so a threshold that cleanly separated junk on one can sit inside the other's
+# real-match cluster and refuse valid requests.
+MIN_SIMILARITY = settings.min_similarity
 
 SYSTEM_PROMPT = f"""You are a curriculum designer for the DAS D.I.A.L literacy programme.
 

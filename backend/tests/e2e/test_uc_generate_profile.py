@@ -23,7 +23,7 @@ class _FakeLLM:
     def complete(self, prompt, system=None, temperature=None, seed=None):
         return "FAKE_COMPLETION"
 
-    def embed_many(self, texts):
+    def embed_many(self, texts, *, is_query=False):
         return [[0.0] * self.embed_dim for _ in texts]
 
 

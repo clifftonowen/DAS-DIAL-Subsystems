@@ -22,7 +22,10 @@ def _auth(token):
 
 @pytest.fixture
 def activity_id():
-    return os.environ.get("TEST_ACTIVITY_ID")
+    value = os.environ.get("TEST_ACTIVITY_ID")
+    if not value:
+        pytest.skip("set TEST_ACTIVITY_ID to a row in learning_activities")
+    return value
 
 @pytest.fixture
 def smtp_enabled():

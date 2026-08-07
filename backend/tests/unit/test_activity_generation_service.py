@@ -1,8 +1,11 @@
-"""UNIT — ActivityGenerationService.build_query(), the retrieval query behind UC3.
+"""UNIT — ActivityGenerationService: the retrieval query, and what generation persists (UC3).
 
 The learner's marks ARE the input to generation: the caller sends an id and a free-text steer,
-and this method decides what the activity will be about. It is the whole of the personalisation,
+and `build_query` decides what the activity will be about. It is the whole of the personalisation,
 so it is tested as a pure function of (profile, params) — no Supabase, no embedder, no LLM.
+
+The second group at the foot of this file covers what `generate` WRITES, which is a separate
+claim: the grounding has to survive on the row, not just come back in the response.
 
 WHAT IT MUST GET RIGHT, and why each is a clinical claim rather than a formatting detail:
 
@@ -13,8 +16,8 @@ WHAT IT MUST GET RIGHT, and why each is a clinical claim rather than a formattin
                                    and hides one when three do
   unassessed is never zero         band A never sits the writing paper; scoring them 0/10 would
                                    hand 2,084 learners a writing activity they cannot attempt
-  empty stays empty                GeneratePage reads an empty query as "no scores yet" and shows
-                                   a different refusal for it (GeneratePage.jsx:117-121)
+  empty stays empty                LearnerDetailPage reads an empty query as "no scores yet" and
+                                   shows a different refusal for it
 """
 import pytest
 
@@ -131,7 +134,7 @@ def test_a_mark_with_no_percentile_is_still_scored(build):
 
 
 def test_no_marks_at_all_returns_an_empty_query(build):
-    """The signal GeneratePage uses to say "no assessment scores yet" rather than "not enough
+    """The signal LearnerDetailPage uses to say "no assessment scores yet" rather than "not enough
     curriculum grounding". It must stay empty, not become a generic stub."""
     bare = {k: None for k in ("phonics", "word_reading_accuracy", "word_spelling", "writing")}
 
@@ -184,3 +187,56 @@ def test_the_prompt_profile_stays_a_whitelist_of_marks(build):
 def test_the_prompt_omits_a_metric_with_no_mark(build):
     assert "Writing" not in _fmt_profile(learner())
     assert _fmt_profile({"phonics": None, "band_group": "A"}) == ""
+
+
+# ── what a successful generation PERSISTS ─────────────────────────────────────
+@pytest.fixture
+def service(monkeypatch):
+    """The real service with its four collaborators stubbed, so `generate` runs end to end
+    without Supabase, an embedder or an LLM. Returns (svc, saved) where `saved` collects the
+    rows handed to ActivityRepository.save."""
+    svc = ActivityGenerationService.__new__(ActivityGenerationService)
+    saved: list[dict] = []
+
+    class _Activities:
+        def save(self, row):
+            saved.append(row)
+
+    svc.learners = type("_L", (), {"find_by_id": staticmethod(lambda _id: learner())})()
+    svc.activities = _Activities()
+    svc.curriculum = type("_C", (), {"retrieve": staticmethod(lambda *a, **k: [CHUNK])})()
+    svc.chunks = None                       # refusal path only; unused on a success
+    svc.llm = type("_M", (), {"complete": staticmethod(lambda *a, **k: "Title: Rhyme Time")})()
+    return svc, saved
+
+
+CHUNK = {
+    "activity_title": "Rhyme Time", "content_md": "body", "concept": "onset_rime",
+    "stage": "practice", "source_file": "BandA.pdf", "page_start": "14", "similarity": 0.71,
+}
+
+
+def test_the_saved_row_carries_the_same_grounding_the_response_returns(service):
+    """Stored, not just returned. A therapist opening this learner later — or a colleague who
+    never ran the generation — has to be able to see which curriculum pages it came from, and
+    the response is gone by then. `grounded_on` cannot stand in: it is a text[] of labels with
+    no concept, stage or similarity."""
+    svc, saved = service
+
+    out = svc.generate("11111111-1111-1111-1111-111111111111", {})
+
+    assert out["status"] == "GENERATED"
+    assert saved[0]["content"]["grounding"] == out["grounding"]
+    assert saved[0]["content"]["grounding"][0]["similarity"] == 0.71
+    assert saved[0]["content"]["grounding"][0]["title"] == "Rhyme Time"
+
+
+def test_the_saved_row_still_carries_grounded_on(service):
+    """The shared PDF renders it (pdf_renderer._build_html), so persisting the richer copy
+    alongside must not replace it."""
+    svc, saved = service
+
+    svc.generate("11111111-1111-1111-1111-111111111111", {})
+
+    assert saved[0]["grounded_on"] == ["Rhyme Time (BandA.pdf p.14)"]
+    assert saved[0]["content"]["text"] == "Title: Rhyme Time"

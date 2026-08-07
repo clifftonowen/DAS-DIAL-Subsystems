@@ -31,6 +31,9 @@ jest.mock("../../lib/api", () => ({
   getLearnerOverview: jest.fn(),
   getLearnerActivities: jest.fn(),
   generateProfile: jest.fn(),
+  // Not exercised here, but LearnerDetailPage imports it — an absent key makes the factory
+  // return undefined and the overlay dies on "generateActivity is not a function".
+  generateActivity: jest.fn(),
 }));
 
 // Plotly needs WebGL, which jsdom has no implementation of. See Graph.test.jsx.

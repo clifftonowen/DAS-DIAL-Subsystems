@@ -6,6 +6,7 @@
     tc7d email sends negative response is not tested since it requires a forced failure from smtp 
 
 tests are mostly skipped for now because need credentials + frontend/backend running, and test may need to touch supabase
+and i also need to add some secrets on github
 """
 import os
 
@@ -28,7 +29,10 @@ RETRY_BUTTON = "//button[@type='submit' and normalize-space()='Retry']"
 
 # helper functions
 def open_learner_with_an_activity(driver, base_url, timeout=20):
-    learner_id = os.environ.get("TEST_LEARNER_ID")
+    #NOT TEST_LEARNER_ID — that secret is for UC2's profile test
+    learner_id = os.environ.get("TEST_SHARE_LEARNER_ID")
+    if not learner_id:
+        pytest.skip("set TEST_SHARE_LEARNER_ID to a learner that has a generated activity")
     driver.get(f"{base_url}/learners/{learner_id}")
     wait = WebDriverWait(driver, timeout)
     share = wait.until(EC.element_to_be_clickable((By.XPATH, SHARE_BUTTON)))

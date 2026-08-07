@@ -21,10 +21,11 @@ import ProfileRadarChart from "../components/ProfileRadarChart";
 import ScoreHistoryChart from "../components/ScoreHistoryChart";
 import ShareWindow from "../components/ShareWindow";
 import ActivityReviewPanel from "../components/ActivityReviewPanel";
+import GroundingSources from "../components/GroundingSources";
 import ReviewSection from "../components/ReviewSection";
 import UploadView from "./UploadView";
 import {
-  getLearner, generateProfile, getLearnerActivities, getLearnerOverview,
+  getLearner, generateProfile, generateActivity, getLearnerActivities, getLearnerOverview,
 } from "../lib/api";
 
 export default function LearnerDetailPage({ learnerId, onBack }) {
@@ -49,7 +50,21 @@ export default function LearnerDetailPage({ learnerId, onBack }) {
   const [latestActivity, setLatestActivity] = useState(null);
   const [isSharing, setIsSharing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  // Activity generation, which happens HERE now rather than on a page of its own.
+  // `notes` steers retrieval — it is appended to the query built from the learner's marks, so
+  // it changes which curriculum chunks come back, not just how the activity is labelled.
+  // `activityResult` holds only a FAILURE (a refusal or a thrown error); a success clears it,
+  // because the outcome of a success is the new activity itself.
+  const [notes, setNotes] = useState("");
+  const [isGeneratingActivity, setIsGeneratingActivity] = useState(false);
+  const [activityResult, setActivityResult] = useState(null);
 
+  // Just the activities. Separate from loadData because regenerating must not flip `loading`,
+  // which would replace the whole page with the spinner for the length of an LLM call.
+  async function refreshActivities() {
+    const activities = await getLearnerActivities(id);
+    setLatestActivity(activities?.[0] ?? null);
+  }
 
   async function loadData() {
     setLoading(true);
@@ -70,8 +85,7 @@ export default function LearnerDetailPage({ learnerId, onBack }) {
       setStudent(formattedLearner);
 
       // Activities hang off the learner now, not a separate profile row.
-      const activities = await getLearnerActivities(id);
-      setLatestActivity(activities?.[0] ?? null);
+      await refreshActivities();
 
       // Not fatal: a learner with no scores still has a page, and it shows the upload prompt.
       try {
@@ -111,6 +125,34 @@ export default function LearnerDetailPage({ learnerId, onBack }) {
     }
   };
 
+  // Generate a fresh activity for this learner, replacing the one on screen.
+  //
+  // THE RESULT IS NOT RENDERED DIRECTLY. It carries no activity id, and its `content` is a bare
+  // string where a stored row's is an object — so the page re-reads the activity list instead
+  // and takes the newest row. That gives one shape everywhere, and an id, which ReviewSection
+  // and ShareWindow both need to work on the activity that was just made.
+  //
+  // A refusal is not a failure of the request: the backend returns 200 with a reason, because
+  // the curriculum genuinely does not cover this learner's need. The previous activity stays on
+  // screen — replacing it with an error would lose work the therapist may still be using.
+  const handleGenerateActivity = async () => {
+    setIsGeneratingActivity(true);
+    setActivityResult(null);
+    try {
+      const result = await generateActivity(id, { notes: notes.trim() });
+      if (result.status === "GENERATED") {
+        await refreshActivities();
+      } else {
+        setActivityResult(result);
+      }
+    } catch (err) {
+      console.error("Failed to generate activity", err);
+      setActivityResult({ error: err.message });
+    } finally {
+      setIsGeneratingActivity(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -126,6 +168,13 @@ export default function LearnerDetailPage({ learnerId, onBack }) {
   const metrics = overview?.metrics ?? [];
   const history = overview?.history ?? [];
   const hasScores = metrics.some((m) => m.assessed);
+
+  // A refusal comes back 200 with a status, not as a thrown error — the request succeeded, the
+  // corpus just did not cover this learner. An EMPTY QUERY is the separate signal that they have
+  // no marks to steer with at all: build_query returns "" when no metric has a mark and the
+  // therapist left the focus blank, and the gate then refuses rather than letting the LLM invent.
+  const refused = activityResult?.status === "INSUFFICIENT_CONTEXT";
+  const noScores = refused && !activityResult.query;
 
   if (error || !student) {
     return (
@@ -178,14 +227,63 @@ export default function LearnerDetailPage({ learnerId, onBack }) {
             and the research cohort has those, so there is nothing here they cannot do. Generate
             Profile promotes their most recent sitting; if they have no scores at all it opens
             the upload flow rather than erroring. */}
-        <div className="flex flex-wrap gap-2.5">
-          <Button variant="primary" onClick={handleGenerateProfile} disabled={isGenerating}>
-            {isGenerating ? "Generating..." : "Generate Profile"}
-          </Button>
-          <Button variant="secondary" onClick={() => navigate("/generate")}>Generate Activity</Button>
-          <Button variant="secondary" onClick={() => setIsSharing(true)} disabled={!latestActivity}>Share</Button>
+        {/* Column sizes to its widest child — the button row — and `items-stretch` (the flex
+            default) then makes the focus input below exactly that wide. */}
+        <div className="flex flex-col gap-2.5">
+          <div className="flex flex-wrap gap-2.5">
+            <Button variant="primary" onClick={handleGenerateProfile} disabled={isGenerating}>
+              {isGenerating ? "Generating..." : "Generate Profile"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleGenerateActivity}
+              loading={isGeneratingActivity}
+            >
+              Generate Activity
+            </Button>
+            <Button variant="secondary" onClick={() => setIsSharing(true)} disabled={!latestActivity}>Share</Button>
+          </div>
+
+          {/* Optional steer, appended to the query built from the learner's marks. Left blank,
+              the activity targets whichever skills they score lowest on.
+              `min-w-0` stops the input's own intrinsic width from widening the column past the
+              buttons — it should follow their width, never set it. */}
+          <input
+            type="text"
+            aria-label="Optional focus"
+            placeholder="Optional focus, e.g. rhyming games, short vowels…"
+            className="h-11 w-full min-w-0 rounded-lg border-2 border-brand-border px-4 text-sm outline-none transition-colors focus:border-brand-primary"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
         </div>
       </div>
+
+      {/* ── Generation failed, in one of two different ways ──
+          A thrown error means the request never completed. A refusal means it did, and the
+          answer was no. Both leave any previously generated activity below untouched. */}
+      {activityResult?.error && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
+          <p className="font-medium">Could not generate activity</p>
+          <p className="mt-1 text-sm">{activityResult.error}</p>
+        </div>
+      )}
+
+      {refused && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+          <p className="font-medium">
+            {noScores ? "This learner has no assessment scores yet" : "Not enough curriculum grounding"}
+          </p>
+          <p className="mt-1 text-sm">
+            {noScores
+              ? "The activity is built from their DIAL marks, and there are none on record. Upload an assessment for them first."
+              : activityResult.reason}
+          </p>
+          {activityResult.query && (
+            <p className="mt-2 text-xs opacity-80">Query: “{activityResult.query}”</p>
+          )}
+        </div>
+      )}
 
       {/* ── Deficiency Alerts — the DIAL marks this learner is furthest behind on ── */}
       {hasScores && (
@@ -258,6 +356,13 @@ export default function LearnerDetailPage({ learnerId, onBack }) {
           <h2 className="mb-3 mt-8 text-[15px] font-semibold text-brand-fg">Activity & Review</h2>
           <div className="space-y-4">
             <ActivityReviewPanel activity={latestActivity} />
+            {/* Read off the STORED row, not the generation response, so it is there for anyone
+                who opens this learner later — including a therapist who never ran it. */}
+            <GroundingSources
+              grounding={latestActivity.content?.grounding}
+              groundedOn={latestActivity.grounded_on}
+              query={latestActivity.content?.query}
+            />
             <ReviewSection
               activityId={latestActivity.id}
               initialStatus={latestActivity.status}

@@ -100,7 +100,7 @@ class ActivityGenerationService:
                 parts.append(extra)
 
         # No marks and no steer: deliberately left thin so the similarity gate below refuses
-        # rather than the LLM inventing from a generic query. GeneratePage reads this empty
+        # rather than the LLM inventing from a generic query. LearnerDetailPage reads this empty
         # string as "this learner has no scores yet", so it must stay empty, not become a stub.
         return " — ".join(parts)
 
@@ -144,12 +144,19 @@ class ActivityGenerationService:
             return self._refusal(learner_id, query, chunks, best,
                                  band_group=band_group, model_text=text)
 
+        grounding = [self._chunk_summary(c) for c in chunks]
         activity = {
             "learner_id": profile["id"] if profile else None,
-            "content": {"text": text, "query": query},
+            # `grounding` is STORED, not just returned. A therapist opening this learner months
+            # later — or a colleague who never ran the generation — must still be able to see
+            # which curriculum pages the activity came from. `grounded_on` cannot carry that: it
+            # is a text[] of compact labels, with no concept, stage or similarity. Rows written
+            # before this existed have no `grounding` key, and the UI falls back to `grounded_on`.
+            "content": {"text": text, "query": query, "grounding": grounding},
             "literacy_objective": params.get("literacy_objective", ""),
             "level": params.get("level") or params.get("band") or "",
             "status": "GENERATED",
+            # Kept alongside the richer copy above: the shared PDF renders it (pdf_renderer).
             "grounded_on": [self._chunk_label(c) for c in chunks],
         }
         self.activities.save(activity)
@@ -158,7 +165,7 @@ class ActivityGenerationService:
             "status": "GENERATED",
             "content": text,
             "query": query,
-            "grounding": [self._chunk_summary(c) for c in chunks],
+            "grounding": grounding,
             "learner_id": profile["id"] if profile else None,
         }
 

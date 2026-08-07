@@ -12,6 +12,14 @@
 // rows and the caption says so. Rendering 1,300 <tr>s to a panel nobody scrolls to
 // the bottom of costs a visible pause on every legend click.
 //
+// EVERY name is a link. Since the 2026-08-07 merge every learner — caseload or research cohort —
+// is a row in `learners` with a uuid, so every one of them has a detail page. Cohort learners
+// open read-only: they have no assessment records, so there is no profile to generate.
+//
+// Caseload learners are still listed FIRST and badged. They are a handful out of thousands,
+// nothing about being on the caseload correlates with how they scored, and the LIMIT cap would
+// otherwise bury the therapist's own learners in the truncated remainder.
+//
 // Props:
 //   rows     {Array}    learner rows for one cluster (see Graph.jsx for the shape)
 //   cluster  {string}   the cluster label, shown as the caption
@@ -42,14 +50,27 @@ export default function Table({ rows, cluster, axes, onSelect }) {
   const showGenre = columns.includes("writing");
 
   // Sorted by the X-axis skill so the table reads as a ranking rather than an arbitrary list.
-  // Copied first — rows belongs to Graph. A learner not assessed on that skill sorts last:
-  // `null - 5` is NaN, and a comparator returning NaN leaves the order undefined.
-  const sorted = [...rows].sort((a, b) => {
+  // A learner not assessed on that skill sorts last: `null - 5` is NaN, and a comparator
+  // returning NaN leaves the order undefined.
+  const byScore = (a, b) => {
     const [x, y] = [a[axes.x], b[axes.x]];
     if (x == null) return y == null ? 0 : 1;
     if (y == null) return -1;
     return y - x;
-  });
+  };
+
+  // CASELOAD LEARNERS COME FIRST, and are never truncated away.
+  //
+  // A cluster holds well over a thousand learners and the body is capped at LIMIT. Being on the
+  // caseload has nothing to do with how a learner scored, so under a plain score sort the
+  // therapist's own learners land in the truncated 90% — the rows they most need to see are the
+  // ones most likely to be missing.
+  //
+  // Copied first — `rows` belongs to Graph. Each group stays score-sorted internally, so the
+  // ranking still reads correctly within it.
+  const caseload = rows.filter((r) => r.onCaseload).sort(byScore);
+  const cohortOnly = rows.filter((r) => !r.onCaseload).sort(byScore);
+  const sorted = [...caseload, ...cohortOnly];
   const shown = sorted.slice(0, LIMIT);
 
   return (
@@ -58,7 +79,8 @@ export default function Table({ rows, cluster, axes, onSelect }) {
         <h3 className="text-sm font-semibold text-brand-fg">{cluster}</h3>
         <p className="text-xs text-brand-fg-muted">
           {rows.length.toLocaleString()} learner{rows.length === 1 ? "" : "s"}
-          {shown.length < sorted.length && ` · top ${LIMIT} shown`} · sorted by{" "}
+          {caseload.length > 0 && ` · ${caseload.length} on your caseload, listed first`}
+          {shown.length < sorted.length && ` · ${LIMIT} shown`} · sorted by{" "}
           {PLOT_SKILLS[axes.x].label}
         </p>
       </div>
@@ -86,10 +108,10 @@ export default function Table({ rows, cluster, axes, onSelect }) {
               >
                 <td className="px-4 py-2.5 text-brand-fg-muted tabular-nums">{i + 1}</td>
                 <td className="px-4 py-2.5">
-                  {/* Only learners who are also on the therapist's caseload have a profile to
-                      open — GET /learners/{id} would 404 for a cohort-only student, so those
-                      names are plain text rather than a button that leads to an error. */}
-                  {row.learnerId ? (
+                  {/* Every learner has a detail page — they all have a row in `learners` now.
+                      A cohort learner's opens read-only, since they have no assessment records
+                      and so nothing to generate a profile from. */}
+                  <span className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => onSelect(row)}
@@ -97,9 +119,14 @@ export default function Table({ rows, cluster, axes, onSelect }) {
                     >
                       {row.name}
                     </button>
-                  ) : (
-                    <span className="font-medium text-brand-fg">{row.name}</span>
-                  )}
+                    {/* Marks the rows that carry a profile and the actions that go with it —
+                        still the useful distinction now that everything is clickable. */}
+                    {row.onCaseload && (
+                      <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                        Caseload
+                      </span>
+                    )}
+                  </span>
                 </td>
                 <td className="px-4 py-2.5 text-brand-fg-muted">{row.bandLevel}</td>
                 {showGenre && (

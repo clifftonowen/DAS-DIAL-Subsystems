@@ -73,7 +73,7 @@
   .cal-day { aspect-ratio: 1; min-height: 32px; max-height: 48px; }
 
   /* Animated fill for skill progress bars (width set inline via style prop)
-     Used by SkillBars.jsx */
+     Was used by SkillBars.jsx, now deleted; kept for any future progress bar. */
   .skill-bar-fill { transition: width 0.6s ease; }
 
   /* Left-border severity colours for deficiency alert cards

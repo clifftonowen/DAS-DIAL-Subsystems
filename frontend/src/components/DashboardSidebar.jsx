@@ -11,7 +11,6 @@ import { NavLink } from "react-router-dom";
 const NAV_ITEMS = [
   { label: "Main",      to: "/" },
   { label: "Learners",  to: "/learners" },
-  { label: "Generate",  to: "/generate" },
 ];
 
 export default function Sidebar() {

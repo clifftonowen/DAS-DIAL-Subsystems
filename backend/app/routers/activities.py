@@ -7,7 +7,7 @@ router = APIRouter(prefix="/activities", tags=["activities"])
 svc = ActivityGenerationService()
 
 
-@router.post("/{profile_id}/generate")
-def generate_activity(profile_id: str, params: GenerationParams,
+@router.post("/{learner_id}/generate")
+def generate_activity(learner_id: str, params: GenerationParams,
                       _: str = Depends(current_therapist)):
-    return svc.generate(profile_id, params.model_dump())
+    return svc.generate(learner_id, params.model_dump())

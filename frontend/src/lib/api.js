@@ -37,26 +37,56 @@ export const logIn = (email, password) =>
 export const signUp = (email, password) =>
   api("/auth/signup", { method: "POST", body: JSON.stringify({ email, password }) });
 
-export const listLearners = () => api("/learners");
+// One PAGE of learners, not all of them. `learners` holds the ~5,783-row anonymised DAS cohort
+// alongside the therapist's caseload, so the list is paged and searched server-side.
+// Resolves to { items: [{ id, student_id, pseudonym, tier, on_caseload, band, band_group,
+//                         cluster_cohort }], total, page, per_page }
+// `total` counts everything matching the CURRENT filters, so the pager reads correctly for a
+// search as well as for the unfiltered list. `caseload` defaults true — the Learners tab opens
+// on the therapist's own learners rather than on thousands of research rows.
+export const listLearners = ({ page = 1, perPage = 24, q = "", caseload = true } = {}) => {
+  const params = new URLSearchParams({
+    page: String(page),
+    per_page: String(perPage),
+    caseload: String(caseload),
+  });
+  if (q) params.set("q", q);
+  return api(`/learners?${params}`);
+};
 export const generateProfile = (learnerId) => api(`/profiles/${learnerId}`, { method: "POST" });
-// Curriculum-grounded generation. `id` may be a profile id or a learner id — the
-// backend resolves either against learner_profiles and derives the retrieval query
-// from that profile. `params` only steers it: { band, concept, stage, notes, k }.
+// Curriculum-grounded generation. Takes a LEARNER id: the backend reads their four DIAL marks
+// and builds the retrieval query from the two they rank lowest on. `params` only steers it:
+// { band, concept, stage, notes, k }.
 // Resolves to { status: "GENERATED" | "INSUFFICIENT_CONTEXT", content, query,
 //               grounding: [{ title, source, page, concept, stage, similarity }],
-//               profile_id, reason? }
-export const generateActivity = (id, params = {}) =>
-  api(`/activities/${id}/generate`, { method: "POST", body: JSON.stringify(params) });
+//               learner_id, reason? }
+export const generateActivity = (learnerId, params = {}) =>
+  api(`/activities/${learnerId}/generate`, { method: "POST", body: JSON.stringify(params) });
 
 // New GET endpoints added per implementation plan
 export const getLearner = (learnerId) => api(`/learners/${learnerId}`);
-export const getLearnerProfiles = (learnerId) => api(`/learners/${learnerId}/profiles`);
+// Every sitting on record, oldest first. The profile page gets this inside
+// getLearnerOverview; this is for callers that want the history alone.
+export const getLearnerSittings = (learnerId) => api(`/learners/${learnerId}/sittings`);
 export const getLearnerAssessments = (learnerId) => api(`/learners/${learnerId}/assessments`);
-export const getProfileActivities = (profileId) => api(`/profiles/${profileId}/activities`);
+// Everything the profile page needs, in one call: the learner's CURRENT marks (the radar chart
+// and the deficiency alerts) plus every sitting on record (the progress line chart). Resolves to
+//   { learner_id, pseudonym, tier, on_caseload,
+//     metrics: [{ key, label, raw, max, percentile, assessed }],
+//     history: [{ semester, band, phonics, ..., phonics_pct, ... }],   // oldest first
+//     student_id, semester, band, band_group, cluster_band, cluster_cohort }
+// `metrics` all-unassessed and an empty `history` are ordinary states — a learner added in the
+// app has no scores until an assessment is uploaded for them.
+export const getLearnerOverview = (learnerId) => api(`/learners/${learnerId}/overview`);
+// Activities generated for a learner, newest first. Keyed on the learner since
+// `learning_activities.profiled` became `learner_id` — there is no profile row to hang
+// them off now that a profile is just the learner's DIAL marks.
+export const getLearnerActivities = (learnerId) => api(`/profiles/${learnerId}/activities`);
+
 
 export const shareActivity = (activityId, recipientEmail) =>
   api("/share", { method: "POST", body: JSON.stringify({ activity_id : activityId, recipient_email:recipientEmail }) });
-export const submitReview = (activityId, text) =>
+export const submitReview = (activityId, text, status = null) =>
   api("/reviews", { method: "POST", body: JSON.stringify({ activity_id: activityId, text, status }) });
 export const getReviews = (activityId) => api(`/reviews/${activityId}`);
 

@@ -7,8 +7,12 @@ email-validator==2.2.0
 supabase==2.7.4
 python-dotenv==1.0.1
 pyjwt==2.10.1
-langchain==0.3.0
-langgraph==0.2.28
+# NOT langchain: the meta-package is never imported (the only LangChain surface in the app is
+# `from langchain_openai import OpenAIEmbeddings` in app/gateways/llm_client.py), and 0.3.0 caps
+# numpy below 2 on every Python version — which conflicted with the numpy pin below and failed
+# CI at `pip install`, before any test ran. langchain-openai pulls langchain-core, openai and
+# tiktoken, none of which constrain numpy. Add it back only if something actually imports it.
+langgraph==0.2.28         # not yet imported either — ActivityGraph's StateGraph TODO wants it
 langchain-openai==0.2.0
 httpx==0.27.2
 PyMuPDF==1.24.10          # curriculum PDF ingestion (Subsystem 3) — fitz positional extraction

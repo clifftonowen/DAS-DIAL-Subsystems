@@ -10,7 +10,6 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from app.core.config import settings
 from app.gateways.llm_client import LLMApiClient
 from app.ingestion.bands import BAND_DIRS, band_for_path
 from app.ingestion.chunk_builder import build_chunks
@@ -72,10 +71,13 @@ def ingest_file(path: str | Path, no_embed: bool = False, band: str | None = Non
     _log_orphans(doc)
 
     if not no_embed:
-        vectors = _llm().embed_many([c.embed_text or "" for c in chunks])
+        llm = _llm()
+        vectors = llm.embed_many([c.embed_text or "" for c in chunks])
         for chunk, vector in zip(chunks, vectors):
             chunk.embedding = vector
-            chunk.embedding_model = settings.embedding_model
+            # the model that actually produced the vector, not a settings field for some other
+            # backend — with completion and embedding split, this column is the only record
+            chunk.embedding_model = llm.embedding_model
 
     rows = [_to_row(c) for c in chunks]
     repo = _repo()

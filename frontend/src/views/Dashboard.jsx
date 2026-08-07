@@ -6,8 +6,10 @@
 // Route tree:
 //   /                → MainPage          (stat cards, calendar, tasks)
 //   /learners        → LearnersPage      (searchable student grid)
-//   /learners/:id    → LearnerDetailPage (radar chart, skill bars, alerts)
-//   /generate        → GeneratePage      (autocomplete + generate activity)
+//   /learners/:id    → LearnerDetailPage (radar chart, skill bars, alerts, activity + review)
+//
+// Activity generation used to live on its own /generate route. It now happens on the learner's
+// own page, where their marks, the generated activity, its grounding and its review sit together.
 //
 // Shell layout (matches prototype .shell div):
 //   .shell-grid (index.css: 220px sidebar | 1fr content, 100dvh)
@@ -25,7 +27,6 @@ import DashboardSidebar from "../components/DashboardSidebar";
 import MainPage from "./MainPage";
 import LearnersPage from "./LearnersPage";
 import LearnerDetailPage from "./LearnerDetailPage";
-import GeneratePage from "./GeneratePage";
 // --- END DASHBOARD PROTOTYPE ADDITIONS ---
 
 // Inner shell — the actual header + sidebar + outlet layout.
@@ -71,7 +72,6 @@ export default function Dashboard({ session }) {
           <Route index element={<MainPage />} />
           <Route path="learners" element={<LearnersPage />} />
           <Route path="learners/:id" element={<LearnerDetailPage />} />
-          <Route path="generate" element={<GeneratePage />} />
         </Route>
       </Routes>
     </BrowserRouter>

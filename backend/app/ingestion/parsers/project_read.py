@@ -4,16 +4,17 @@ These books carry NO 'Name of Activity:' body delimiter. Each page header carrie
 the concept is carried forward from the last explicit heading until it changes. A new chunk
 starts when the (concept, stage, sequence_no) key changes.
 
-Two passes: (1) annotate every page with its normalised stage/seq/concept/title/traits and a
-carried-forward band; (2) segment on the key tuple and build one Unit per run.
+Two passes: (1) annotate every page with its normalised stage/seq/concept/title/traits;
+(2) segment on the key tuple and build one Unit per run.
 
-The band LETTER comes from the source folder (passed in by the registry); only the sub-band digit
-(1/2/3) is carried forward from the pages, so the same code serves Band A and Band B books.
+Band is document-level, never per-page: the letter comes from the source folder (passed in by the
+registry) and the level, if any, from the filename — see bands.py on why page text is not trusted
+for it. The same code therefore serves Band A and Band B books.
 """
 from __future__ import annotations
 
 from app.entities.curriculum_chunk import Unit
-from app.ingestion.bands import band_in_text, default_sub_band
+from app.ingestion.bands import band_from_filename
 from app.ingestion.constants import CONCEPT_TO_MODULE, RESOURCE_STAGES
 from app.ingestion.normalise import (
     normalise_stage,
@@ -27,15 +28,6 @@ from app.ingestion.segment import segment
 _NAME_OF_ACTIVITY = "name of activity"
 
 
-def _detect_band(*texts: str | None, band: str = "A") -> str | None:
-    """First <band>1/2/3 token across the given texts, else None."""
-    for text in texts:
-        found = band_in_text(text, band)
-        if found:
-            return found
-    return None
-
-
 class ProjectReadParser:
     name = "project_read"
 
@@ -46,10 +38,10 @@ class ProjectReadParser:
         )
 
     def parse(self, doc: Document, band: str = "A") -> list[Unit]:
-        # Pass 1 — annotate pages in reading order (carry-forward is stateful).
-        band_by_page: dict[int, str] = {}
+        doc_band = band_from_filename(doc.source_file, band)
+
+        # Pass 1 — annotate pages in reading order (concept carry-forward is stateful).
         prev_concept: str | None = None
-        prev_band = default_sub_band(band)   # baseline until a page names its sub-band
         for p in doc.pages:
             stage, seq = normalise_stage(p.raw_header)
             p.stage = stage
@@ -60,9 +52,6 @@ class ProjectReadParser:
             concept = resolve_concept(prev_concept, p.activity_title, stage)
             p.concept = concept
             prev_concept = concept
-            sub_band = _detect_band(p.raw_header, p.content_md, band=band) or prev_band
-            prev_band = sub_band
-            band_by_page[p.number] = sub_band
 
         # Pass 2 — segment on the key tuple and build one Unit per run.
         groups = segment(
@@ -75,7 +64,7 @@ class ProjectReadParser:
             units.append(
                 Unit(
                     pages=group,
-                    band=band_by_page[head.number],
+                    band=doc_band,
                     module=CONCEPT_TO_MODULE.get(head.concept or ""),
                     concept=head.concept,
                     stage=stage,

@@ -5,7 +5,7 @@
     tc7a  valid address     -> "Activity sent to recipient"
     tc7d email sends negative response is not tested since it requires a forced failure from smtp 
 
-tests are mostly skipped for now because 
+tests are mostly skipped for now because need credentials + frontend/backend running, and test may need to touch supabase
 """
 import os
 

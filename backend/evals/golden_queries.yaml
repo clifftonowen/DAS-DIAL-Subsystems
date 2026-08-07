@@ -1,0 +1,259 @@
+# Golden retrieval set for curriculum_chunks.
+#
+# ############################################################################
+# ##  DRAFT - REQUIRES REVIEW BEFORE ANY NUMBER FROM IT IS TRUSTED.         ##
+# ##  Drafted by reading the ingested corpus back out of Supabase, not by   ##
+# ##  a curriculum specialist. The `relevant` lists are a best reading of   ##
+# ##  which chunks SHOULD ground each request; they are the ground truth    ##
+# ##  every metric is computed against, so a wrong entry does not show up   ##
+# ##  as an error - it shows up as a worse (or better) score.               ##
+# ##  Please correct, add and delete freely, then delete this banner.       ##
+# ############################################################################
+#
+# HOW A CASE IS KEYED. `relevant` entries use (source_file, page_start), which is unique per
+# chunk and survives a re-ingest. Chunk `id` is deliberately NOT used: ingestion regenerates
+# UUIDs (gen_random_uuid()), so an id-keyed set silently rots the first time anyone re-ingests.
+# `title` is documentation only - the loader ignores it for matching but warns when it has
+# drifted, which is how you find out the corpus moved under you.
+#
+# QUERY SHAPE MATTERS. These mimic what ActivityGenerationService.build_query actually produces:
+#   "literacy activity targeting <feature> N/10 [and <feature> N/10] - <objective> - <notes>"
+# short, numeric-heavy, and nothing like a natural question. Retrieval is only useful if it works
+# on the strings the system really sends, so do not "improve" these into well-formed questions.
+#
+# `kind: out_of_domain` cases have no relevant chunks by design. They exist to establish the junk
+# score ceiling that MIN_SIMILARITY has to sit above - see scripts/calibrate_gate.py.
+
+cases:
+
+  # ---------------------------------------------------------------- Band A: phonological
+  - id: a_rhyming
+    kind: in_domain
+    band_group: A
+    query: "literacy activity targeting phonics 2.4/10 - recognising and producing rhyme"
+    relevant:
+      - {source_file: "2) A1.pdf", page_start: "39", title: "Twist a Rhyme"}
+      - {source_file: "2) A1.pdf", page_start: "36", title: "Web of Rhymes"}
+      - {source_file: "2) A1.pdf", page_start: "33", title: "Match the Pair"}
+
+  - id: a_syllables
+    kind: in_domain
+    band_group: A
+    query: "literacy activity targeting phonics 3.0/10 - segmenting words into syllables"
+    relevant:
+      - {source_file: "3) A2.pdf", page_start: "73", title: "Ice Cream syllable sort"}
+      - {source_file: "3) A2.pdf", page_start: "76", title: "Syllable race"}
+
+  - id: a_cvc_blending
+    kind: in_domain
+    band_group: A
+    query: "literacy activity targeting phonics 2.1/10 and word reading accuracy 3.0/10 - blending CVC words"
+    relevant:
+      - {source_file: "3) A2.pdf", page_start: "62", title: "Segmenting sounds (3 letter CVC words)"}
+      - {source_file: "3) A2.pdf", page_start: "91", title: "Phonics Word Wheels"}
+      - {source_file: "3) A2.pdf", page_start: "80", title: "Fries Blending & Segmenting Game"}
+
+  - id: a_vowels_short_long
+    kind: in_domain
+    band_group: A
+    query: "literacy activity targeting phonics 2.8/10 - distinguishing long and short vowel sounds"
+    relevant:
+      - {source_file: "3) A2.pdf", page_start: "88", title: "Long and short vowel sound matching"}
+      - {source_file: "3) A2.pdf", page_start: "65", title: "Vowel sticks sorting activity"}
+      - {source_file: "2) A1.pdf", page_start: "24", title: "Distinguish Vowels and consonants"}
+
+  - id: a_word_segmentation
+    kind: in_domain
+    band_group: A
+    query: "literacy activity targeting phonics 3.4/10 - segmenting onset and rime"
+    relevant:
+      - {source_file: "3) A2.pdf", page_start: "70", title: "Word Segmentation"}
+      - {source_file: "3) A2.pdf", page_start: "84", title: "Choc-a-sound"}
+
+  # ---------------------------------------------------------------- Band A: sentence level
+  - id: a_action_predicate_intro
+    kind: in_domain
+    band_group: A
+    concept: action_predicate
+    query: "literacy activity targeting writing 3.2/10 - introducing the action predicate"
+    relevant:
+      - {source_file: "14) Action predicate.pdf", page_start: "316", title: "Introducing Action Predicate"}
+      - {source_file: "14) Action predicate.pdf", page_start: "314", title: "An action predicate tells you the"}
+
+  - id: a_action_predicate_practice
+    kind: in_domain
+    band_group: A
+    concept: action_predicate
+    stage: practice
+    query: "literacy activity targeting writing 4.0/10 - practising identifying the action of the subject"
+    relevant:
+      - {source_file: "14) Action predicate.pdf", page_start: "318", title: "The action predicate tells the action of the subject."}
+
+  - id: a_predicate_expander_intro
+    kind: in_domain
+    band_group: A
+    concept: predicate_expander
+    query: "literacy activity targeting writing 2.9/10 - introducing predicate expanders"
+    relevant:
+      - {source_file: "21) Predicate expander 1.pdf", page_start: "374", title: "Introducing Predicate Expanders"}
+      - {source_file: "21) Predicate expander 1.pdf", page_start: "378", title: "Introducing How Predicate Expander"}
+
+  - id: a_where_expander
+    kind: in_domain
+    band_group: A
+    concept: predicate_expander
+    query: "literacy activity targeting writing 3.6/10 - where predicate expanders, place and position"
+    relevant:
+      - {source_file: "22) Predicate Expander 2.pdf", page_start: "397", title: "A \"where predicate expander\" tells you the place or position"}
+
+  - id: a_adverb_ly_suffix
+    kind: in_domain
+    band_group: A
+    concept: predicate_expander
+    query: "literacy activity targeting word spelling 3.8/10 - adding the suffix -ly"
+    relevant:
+      - {source_file: "21) Predicate expander 1.pdf", page_start: "380", title: "Adding the suffix -ly"}
+
+  - id: a_similes
+    kind: in_domain
+    band_group: A
+    concept: predicate_expander
+    query: "literacy activity targeting writing 4.2/10 - similes using as and like"
+    relevant:
+      - {source_file: "21) Predicate expander 1.pdf", page_start: "382", title: "A simile is a phrase that starts with \"as\" or \"like\""}
+
+  - id: a_substitute_namers
+    kind: in_domain
+    band_group: A
+    concept: subject
+    query: "literacy activity targeting writing 3.3/10 - replacing a subject with a substitute namer"
+    relevant:
+      - {source_file: "16) substitute namers 1.pdf", page_start: "349", title: "Introducing Substitute Namers"}
+      - {source_file: "16) substitute namers 1.pdf", page_start: "345", title: "A Subject can be replaced by a Substitute Namer."}
+      - {source_file: "16) substitute namers 1.pdf", page_start: "353", title: "Fill in the blanks with these substitute namers"}
+
+  - id: a_singular_plural_subjects
+    kind: in_domain
+    band_group: A
+    concept: subject
+    query: "literacy activity targeting word spelling 3.1/10 - singular and plural subjects, -s and -es suffixes"
+    relevant:
+      - {source_file: "31) Subject Predicate Agreement.pdf", page_start: "462", title: "Singular and Plural Subjects"}
+      - {source_file: "31) Subject Predicate Agreement.pdf", page_start: "468", title: "Plural Subjects may 1) contain suffixes -s, or -es"}
+
+  # ---------------------------------------------------------------- Band B
+  - id: b_compound_subject
+    kind: in_domain
+    band_group: B
+    concept: compound
+    query: "literacy activity targeting writing 3.5/10 - compound subjects joined by a connector"
+    relevant:
+      - {source_file: "7) Subject.pdf", page_start: "88", title: "Introducing Compound Subjects"}
+      - {source_file: "7) Subject.pdf", page_start: "87", title: "Compound Subject"}
+      - {source_file: "7) Subject.pdf", page_start: "90", title: "A compound subject consists of two subjects connected by a connector."}
+      - {source_file: "29) Subject_Predicate agreement.pdf", page_start: "409", title: "Compound subject"}
+
+  - id: b_series_subject
+    kind: in_domain
+    band_group: B
+    concept: series
+    query: "literacy activity targeting writing 3.7/10 - series subjects, three or more connected subjects"
+    relevant:
+      - {source_file: "7) Subject.pdf", page_start: "92", title: "Introducing Series Subject"}
+      - {source_file: "7) Subject.pdf", page_start: "93", title: "Introducing Series Subjects"}
+      - {source_file: "7) Subject.pdf", page_start: "95", title: "A series subject consists of three or more individual subjects"}
+
+  - id: b_subject_describer
+    kind: in_domain
+    band_group: B
+    concept: subject
+    query: "literacy activity targeting writing 2.6/10 - subject describers that expand the subject"
+    relevant:
+      - {source_file: "24) Subject describer sentence level.pdf", page_start: "261", title: "Introducing Subject Describer 1"}
+      - {source_file: "24) Subject describer sentence level.pdf", page_start: "255", title: "A Subject Describer expands our subjects."}
+      - {source_file: "24) Subject describer sentence level.pdf", page_start: "263", title: "A subject describer expands the subject. It tells how the subject looks"}
+
+  - id: b_direct_receiver
+    kind: in_domain
+    band_group: B
+    concept: predicate_expander
+    query: "literacy activity targeting writing 3.0/10 - what whom direct receiver carrying the action across"
+    relevant:
+      - {source_file: "17) What_Whom direct receiver.pdf", page_start: "213", title: "Introducing What/Whom Direct Receiver"}
+      - {source_file: "17) What_Whom direct receiver.pdf", page_start: "215", title: "A what/whom direct receiver carries the action across to the receiver."}
+
+  - id: b_sentence_mobility
+    kind: in_domain
+    band_group: B
+    concept: action_predicate
+    query: "literacy activity targeting writing 4.1/10 - sentence variety, moving where and how expanders"
+    relevant:
+      - {source_file: "19) Sentence Mobility.pdf", page_start: "225", title: "Introducing Sentence Mobility - Where & How"}
+      - {source_file: "19) Sentence Mobility.pdf", page_start: "232", title: "Sentence Variety - Where & How"}
+
+  - id: b_when_expander
+    kind: in_domain
+    band_group: B
+    concept: predicate_expander
+    query: "literacy activity targeting writing 3.4/10 - when predicate expanders"
+    relevant:
+      - {source_file: "19) Sentence Mobility.pdf", page_start: "221", title: "Examples for When Predicate Expander"}
+
+  - id: b_barebone_sentence
+    kind: in_domain
+    band_group: B
+    concept: action_predicate
+    query: "literacy activity targeting writing 2.2/10 - subject plus action predicate makes a barebone sentence"
+    relevant:
+      - {source_file: "29) Subject_Predicate agreement.pdf", page_start: "382", title: "Subject + Action predicate = A barebone sentence"}
+      - {source_file: "29) Subject_Predicate agreement.pdf", page_start: "395", title: "Action Predicates"}
+
+  # ---------------------------------------------------------------- Band scoping
+  # Band C has no ingested curriculum (parsers/band_c.py is a stub that returns []). A Band C
+  # learner must therefore retrieve NOTHING, not fall through to another band's material - that
+  # fallthrough is the single worst failure this system could have.
+  - id: c_empty_band
+    kind: empty_expected
+    band_group: C
+    query: "literacy activity targeting phonics 2.0/10 - letter sound correspondence"
+    relevant: []
+
+  # ---------------------------------------------------------------- Out of domain (junk)
+  # No relevant chunks. Used ONLY to find the junk score ceiling for the similarity gate.
+  - id: junk_tax
+    kind: out_of_domain
+    query: "how do I file my income tax return this year"
+    relevant: []
+
+  - id: junk_recipe
+    kind: out_of_domain
+    query: "best pasta carbonara recipe with guanciale and pecorino"
+    relevant: []
+
+  - id: junk_football
+    kind: out_of_domain
+    query: "premier league fixtures and results this weekend"
+    relevant: []
+
+  - id: junk_router
+    kind: out_of_domain
+    query: "how to reset a router password and change the wifi ssid"
+    relevant: []
+
+  - id: junk_medical
+    kind: out_of_domain
+    query: "symptoms of vitamin D deficiency in adults and recommended dosage"
+    relevant: []
+
+  - id: junk_travel
+    kind: out_of_domain
+    query: "cheapest flights from Singapore to Tokyo in December"
+    relevant: []
+
+  # Adversarial near-miss: education-flavoured vocabulary, but nothing this corpus teaches.
+  # If the gate lets this through, it is too loose - the corpus covers phonological awareness and
+  # sentence construction, not numeracy.
+  - id: junk_maths_lookalike
+    kind: out_of_domain
+    query: "literacy activity targeting phonics 3.0/10 - long division and multiplying fractions"
+    relevant: []

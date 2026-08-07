@@ -65,7 +65,11 @@ def test_an_invalid_address_prompts_re_entry(system_creds, driver, frontend_url)
 # System handles failure to render the learning activity as PDF
 def test_a_render_failure_is_reported_without_a_retry(system_creds, driver, frontend_url):
     activity_id = os.environ.get("TEST_UNRENDERABLE_ACTIVITY_ID")
+    if not activity_id:
+        pytest.skip("set TEST_UNRENDERABLE_ACTIVITY_ID ")
     learner_id = os.environ.get("TEST_UNRENDERABLE_LEARNER_ID")
+    if not learner_id:
+        pytest.skip("set TEST_UNRENDERABLE_LEARNER_ID")
     login(driver, frontend_url, system_creds["email"], system_creds["password"])
     driver.get(f"{frontend_url}/learners/{learner_id}")
     wait = WebDriverWait(driver, 20)

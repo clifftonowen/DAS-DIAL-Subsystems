@@ -243,8 +243,15 @@ create table if not exists curriculum_chunks (
   page_end text,
 
   -- vector + bookkeeping
-  embedding vector(768),                    -- nomic-embed-text (Ollama, default provider)
+  embedding vector(768),                    -- incumbent model (see embedding_model for which)
   embedding_model text,
+
+  -- Challenger slot, for evaluating a second embedding model without destroying the incumbent's
+  -- vectors. Both are 768-dim so they are interchangeable at the RPC boundary; which one ranks is
+  -- chosen per-call by `use_alt`. NULL until something re-embeds into it.
+  embedding_alt vector(768),
+  embedding_alt_model text,
+
   ingest_version text,
   raw_header text,                         -- debugging
   embed_text text,                         -- optional: "why did this match?"
@@ -260,6 +267,8 @@ create table if not exists curriculum_chunks (
 
 create index if not exists idx_curriculum_embedding
   on curriculum_chunks using hnsw (embedding vector_cosine_ops);
+create index if not exists idx_curriculum_embedding_alt
+  on curriculum_chunks using hnsw (embedding_alt vector_cosine_ops);
 create index if not exists idx_curriculum_fts
   on curriculum_chunks using gin (fts);
 create index if not exists idx_curriculum_filter
@@ -283,7 +292,8 @@ create or replace function match_curriculum(
   filter_band_group text default null,
   filter_concept text default null,
   filter_stage text default null,
-  match_count int default 3
+  match_count int default 3,
+  use_alt boolean default false        -- false => `embedding` (incumbent), true => `embedding_alt`
 )
 returns table (
   id uuid, activity_title text, content_md text, answer_key text,
@@ -292,14 +302,16 @@ returns table (
 language sql stable as $$
   select c.id, c.activity_title, c.content_md, c.answer_key,
          c.concept, c.stage, c.source_file, c.page_start,
-         1 - (c.embedding <=> query_embedding) as similarity
+         1 - ((case when use_alt then c.embedding_alt else c.embedding end) <=> query_embedding)
+           as similarity
   from curriculum_chunks c
   where c.doc_type = 'lesson_plan'
+    and (case when use_alt then c.embedding_alt else c.embedding end) is not null
     and (filter_band       is null or c.band = filter_band)
     and (filter_band_group is null or left(c.band, 1) = filter_band_group)
     and (filter_concept    is null or c.concept = filter_concept)
     and (filter_stage      is null or c.stage = filter_stage)
-  order by c.embedding <=> query_embedding
+  order by (case when use_alt then c.embedding_alt else c.embedding end) <=> query_embedding
   limit match_count;
 $$;
 
@@ -318,7 +330,8 @@ create or replace function hybrid_match_curriculum(
   rrf_k int default 50,               -- RRF smoothing constant (larger => flatter rank weighting)
   full_text_weight float default 1.0,
   semantic_weight float default 1.0,
-  candidate_pool int default 50       -- rows each side contributes before fusion
+  candidate_pool int default 50,      -- rows each side contributes before fusion
+  use_alt boolean default false       -- false => `embedding` (incumbent), true => `embedding_alt`
 )
 returns table (
   id uuid, activity_title text, content_md text, answer_key text,
@@ -329,7 +342,8 @@ language sql stable as $$
   -- Band filtering lives HERE, not after ranking: out-of-band chunks are never candidates for
   -- either arm, so RRF fusion cannot resurrect one.
   with filtered as (
-    select * from curriculum_chunks c
+    select *, (case when use_alt then c.embedding_alt else c.embedding end) as vec
+    from curriculum_chunks c
     where c.doc_type = 'lesson_plan'
       and (filter_band       is null or c.band = filter_band)
       and (filter_band_group is null or left(c.band, 1) = filter_band_group)
@@ -338,11 +352,11 @@ language sql stable as $$
   ),
   semantic as (
     select f.id,
-           row_number() over (order by f.embedding <=> query_embedding) as rank,
-           1 - (f.embedding <=> query_embedding) as similarity
+           row_number() over (order by f.vec <=> query_embedding) as rank,
+           1 - (f.vec <=> query_embedding) as similarity
     from filtered f
-    where f.embedding is not null
-    order by f.embedding <=> query_embedding
+    where f.vec is not null
+    order by f.vec <=> query_embedding
     limit candidate_pool
   ),
   keyword as (

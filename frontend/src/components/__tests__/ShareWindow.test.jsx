@@ -4,6 +4,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+
 // Jest hoists this above the imports, so the factory must be self-contained.
 jest.mock("../../lib/api", () => ({
   shareActivity: jest.fn(),

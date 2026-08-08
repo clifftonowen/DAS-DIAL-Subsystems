@@ -471,6 +471,96 @@ class _Auth:
         return SimpleNamespace(id=user["id"], email=user["email"])
 
 
+# ── RPC (Postgres functions) ─────────────────────────────────────────────────
+# The RAG repositories reach pgvector through `get_supabase().rpc(name, params).execute().data`,
+# NOT the table chain. FakeSupabase models the two curriculum retrieval functions defined in
+# infra/migrations/2026-08-09_curriculum_band_group_filter.sql.
+#
+# WHAT IS MODELLED FAITHFULLY: the metadata filters in the SQL `filtered` CTE — doc_type,
+# filter_band (exact), filter_band_group (the band LETTER, `left(band,1)`), filter_concept,
+# filter_stage — and match_count. A null filter does not narrow, exactly as `x is null or col = x`.
+#
+# WHAT IS NOT REAL: the ranking. The SQL orders by vector distance (and RRF for hybrid); a fake
+# has no embeddings, so rows are ordered by the seeded `similarity` field instead. Tests therefore
+# assert WHICH rows come back and in what relative order they were seeded to — never a computed
+# score. Vector math is e2e's job, against the real project.
+def _curriculum_filtered(store, params):
+    """The `filtered` CTE + ORDER BY + LIMIT, shared by both curriculum RPCs."""
+    band = params.get("filter_band")
+    group = params.get("filter_band_group")
+    concept = params.get("filter_concept")
+    stage = params.get("filter_stage")
+    match_count = params.get("match_count", 3)
+
+    out = []
+    for row in store.get("curriculum_chunks", []):
+        if row.get("doc_type") != "lesson_plan":
+            continue
+        if band is not None and row.get("band") != band:
+            continue
+        # `left(c.band, 1) = filter_band_group`: the band LETTER, so 'A' reaches 'A'/'A1'/'A2'/'A3'.
+        if group is not None and str(row.get("band") or "")[:1] != group:
+            continue
+        if concept is not None and row.get("concept") != concept:
+            continue
+        if stage is not None and row.get("stage") != stage:
+            continue
+        out.append(row)
+
+    # No real vectors: rank by the seeded similarity, highest first (stable). See the note above.
+    out = sorted(out, key=lambda r: r.get("similarity") or 0.0, reverse=True)
+    return out[:match_count]
+
+
+_CURRICULUM_COLUMNS = (
+    "id", "activity_title", "content_md", "answer_key",
+    "concept", "stage", "source_file", "page_start", "similarity",
+)
+
+
+def _rpc_match_curriculum(store, params):
+    """Pure-vector retrieval. Projects to exactly the columns the SQL RETURNS TABLE names, so a
+    caller that reads a column the RPC does not return (e.g. `band`) fails here as it would live."""
+    return [{c: r.get(c) for c in _CURRICULUM_COLUMNS} for r in _curriculum_filtered(store, params)]
+
+
+def _rpc_hybrid_match_curriculum(store, params):
+    """Hybrid retrieval. Same rows and filters; adds the `score` column the hybrid RPC returns.
+    The score is not a real RRF fusion — it echoes similarity so rows stay in a defined order."""
+    rows = _curriculum_filtered(store, params)
+    return [
+        {**{c: r.get(c) for c in _CURRICULUM_COLUMNS}, "score": r.get("similarity") or 0.0}
+        for r in rows
+    ]
+
+
+_RPC_HANDLERS = {
+    "match_curriculum": _rpc_match_curriculum,
+    "hybrid_match_curriculum": _rpc_hybrid_match_curriculum,
+}
+
+
+class _RpcCall:
+    """Mirrors `get_supabase().rpc(name, params)` — terminal `.execute().data`, like _Query."""
+
+    def __init__(self, store, name, params, log):
+        self._store = store
+        self._name = name
+        self._params = params or {}
+        self._log = log
+
+    def execute(self):
+        # Logged as (name, "rpc") so a test can assert an RPC edge was (or was not) taken, the
+        # same way queries_on() works for table round trips.
+        self._log.append((self._name, "rpc"))
+        handler = _RPC_HANDLERS.get(self._name)
+        if handler is None:
+            # An unmodelled RPC must not return an empty list and pass silently — that hides a
+            # real call the repository makes. Fail loudly and name the gap, as or_() does.
+            raise NotImplementedError(f"fake_supabase: rpc {self._name!r} is not modelled")
+        return _Result(handler(self._store, self._params))
+
+
 class FakeSupabase:
     """Drop-in stand-in for the Supabase client.
 
@@ -481,6 +571,10 @@ class FakeSupabase:
             fake Authentication Service accepts.
         confirm_email: when True, `sign_up` returns a user with no session,
             modelling a project that has email confirmation enabled.
+
+    RPC: `.rpc(name, params)` models the curriculum retrieval functions (match_curriculum,
+    hybrid_match_curriculum) — metadata filters honoured, ranking by the seeded `similarity`.
+    See the module note above _RpcCall.
     """
 
     def __init__(self, seed=None, user_id="test-therapist-id",
@@ -494,6 +588,9 @@ class FakeSupabase:
 
     def table(self, name):
         return _Query(self.store, name, log=self.queries)
+
+    def rpc(self, name, params=None):
+        return _RpcCall(self.store, name, params, log=self.queries)
 
     def queries_on(self, table):
         """The round trips made against one table, for interaction assertions."""

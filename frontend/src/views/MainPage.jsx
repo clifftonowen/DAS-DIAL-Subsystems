@@ -1,24 +1,43 @@
 // MainPage.jsx — Default landing page rendered at route "/".
 //
-// Layout matches the prototype's .main-layout grid (defined in index.css):
-//   .main-alerts  — full-width row of 4 StatCards at the top
-//   left column   — Calendar
-//   right column  — TaskList (Today's Tasks + Upcoming)
+// Crisp Bright refresh (design direction 1d). Vertical stack:
+//   HeroBanner    — welcome banner
+//   alerts row    — StatCards, one per STAT_CARDS entry below
+//   .main-layout  — Calendar (left column) + TaskList stack (right column)
 //
-// All data is hardcoded to match the prototype exactly.
-// When real data is available, replace the static arrays with API calls.
+// All three sections read live data from /dashboard/* via lib/api.
 
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import HeroBanner from "../components/HeroBanner";
 import StatCard from "../components/StatCard";
 import Calendar from "../components/Calendar";
 import TaskList from "../components/TaskList";
 import { getDashboardStats, getDashboardTasks, getDashboardEvents } from "../lib/api";
+import Graph from "../components/Graph";
+import Modal from "../components/Modal";
+import LearnerDetailPage from "./LearnerDetailPage";
+
+// Alerts row above the calendar — one entry per card, each driven by a key on the
+// /dashboard/stats response. Add a card by adding a row here; no new component needed.
+const STAT_CARDS = [
+  { key: "total_learners",  title: "Total Learners",
+    subtitle: (n) => `${n} learners enrolled` },
+  { key: "needs_profiling", title: "Missing Profiles",
+    subtitle: (n) => `${n} learners missing a profile` },
+  { key: "flagged",         title: "Pending Review",
+    subtitle: (n) => `${n} activities awaiting review` },
+];
 
 export default function MainPage() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [tasks, setTasks] = useState({ today: [], upcoming: [] });
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Learner row picked from the cohort graph's cluster table, shown in an overlay.
+  // Owned here rather than in Graph so that component stays free of view imports.
+  const [selectedLearner, setSelectedLearner] = useState(null);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -53,40 +72,7 @@ export default function MainPage() {
     loadDashboard();
   }, []);
 
-  const statCards = [
-    {
-      icon: "⚠️",
-      iconBg: "bg-red-100",
-      title: "Flagged Activities",
-      subtitle: `${stats?.flagged || 0} activities need your review`,
-      trailing: <span className="text-lg font-bold text-brand-fg">{stats?.flagged || 0}</span>,
-    },
-    {
-      icon: "📊",
-      iconBg: "bg-yellow-100",
-      title: "Needs Profiling",
-      subtitle: `${stats?.needs_profiling || 0} learners missing a profile`,
-      trailing: <span className="text-lg font-bold text-brand-fg">{stats?.needs_profiling || 0}</span>,
-    },
-    {
-      icon: "🔴",
-      iconBg: "bg-red-100",
-      title: "High Risk",
-      subtitle: `${stats?.high_risk || 0} learners with high risk`,
-      trailing: (
-        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-          Urgent
-        </span>
-      ),
-    },
-    {
-      icon: "📅",
-      iconBg: "bg-blue-100",
-      title: "Inactive Learners",
-      subtitle: `${stats?.inactive || 0} learner inactive 30+ days`,
-      trailing: <span className="text-lg font-bold text-brand-fg">{stats?.inactive || 0}</span>,
-    }
-  ];
+  const todayLabel = new Date().toLocaleDateString("en-SG", { day: "numeric", month: "long" });
 
   if (loading) {
     return (
@@ -97,22 +83,67 @@ export default function MainPage() {
   }
 
   return (
-    <div className="main-layout h-full">
-      {/* ── Alerts row ── */}
-      <div className="main-alerts grid grid-cols-2 gap-3 xl:grid-cols-4">
-        {statCards.map((card) => (
-          <StatCard key={card.title} {...card} />
-        ))}
+    // No h-full: this column is taller than the viewport, and h-full would let
+    // flex-shrink compress every child to fit (clipping the hero, which is
+    // overflow-hidden). The <main> in Dashboard.jsx already scrolls.
+    <div className="flex flex-col gap-[18px]">
+      {/* ── Welcome banner ── */}
+      <HeroBanner dateLabel={`Today, ${todayLabel}`} onStartReview={() => navigate("/learners")} />
+
+      {/* ── Alerts row — one StatCard per STAT_CARDS entry ── */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {STAT_CARDS.map(({ key, title, subtitle }) => {
+          const count = stats?.[key] ?? 0;
+          return (
+            <StatCard
+              key={key}
+              title={title}
+              subtitle={subtitle(count)}
+              trailing={<span className="text-lg font-extrabold text-brand-fg">{count}</span>}
+            />
+          );
+        })}
       </div>
 
-      {/* ── Calendar — left column ── */}
-      <Calendar events={events} />
+      {/* ── Calendar (left) + task panel (right) ── */}
+      {/* .main-layout sets its own fixed height — no flex-1, so it does not
+          stretch to the viewport */}
+      <div className="main-layout">
+        {/* Calendar — capped width so the square day cells stay a sensible size */}
+        <div className="w-full max-w-[460px]">
+          <Calendar events={events} />
+        </div>
 
-      {/* ── Task panel — right column ── */}
-      <div className="flex flex-col gap-4 overflow-y-auto">
-        <TaskList title="📋 Today's Tasks" tasks={tasks.today} />
-        <TaskList title="📌 Upcoming"       tasks={tasks.upcoming} />
+        {/* Task panel — takes the remaining width */}
+        <div className="flex min-w-[320px] flex-1 flex-col gap-4 overflow-y-auto">
+          <TaskList title="Today's Tasks" tasks={tasks.today} />
+          <TaskList title="Upcoming"      tasks={tasks.upcoming} />
+        </div>
       </div>
+
+      {/* ── Cohort skills comparison ── */}
+      <div>
+        <h2 className="mb-3 text-[15px] font-semibold text-brand-fg">
+          Cohort Skills Comparison
+        </h2>
+        <Graph onSelectLearner={setSelectedLearner} />
+      </div>
+
+      {/* Same LearnerDetailPage the Learners tab routes to, handed an id instead of
+          reading one from the URL. Closing returns to the graph with its selected
+          cluster and camera angle intact.
+
+          Every plotted learner can be opened: since the merge they are all rows in `learners`
+          with a uuid. A research-cohort learner's page renders read-only — the page decides
+          that from `on_caseload`, not this component. */}
+      {selectedLearner && (
+        <Modal onClose={() => setSelectedLearner(null)}>
+          <LearnerDetailPage
+            learnerId={selectedLearner.id}
+            onBack={() => setSelectedLearner(null)}
+          />
+        </Modal>
+      )}
     </div>
   );
 }

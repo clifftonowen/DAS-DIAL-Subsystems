@@ -7,12 +7,10 @@
 
 import { NavLink } from "react-router-dom";
 
-// Nav items — icon, label, and the route path they link to.
-// Matches the prototype sidebar: 🏠 Main | 👥 Learners | ⚡ Generate
+// Nav items — label and the route path they link to.
 const NAV_ITEMS = [
-  { icon: "🏠", label: "Main",      to: "/" },
-  { icon: "👥", label: "Learners",  to: "/learners" },
-  { icon: "⚡", label: "Generate",  to: "/generate" },
+  { label: "Main",      to: "/" },
+  { label: "Learners",  to: "/learners" },
 ];
 
 export default function Sidebar() {
@@ -21,7 +19,7 @@ export default function Sidebar() {
     <nav className="flex flex-col gap-1 overflow-y-auto border-r border-brand-border bg-white px-3 py-5">
 
       {/* ── Primary nav links ── */}
-      {NAV_ITEMS.map(({ icon, label, to }) => (
+      {NAV_ITEMS.map(({ label, to }) => (
         <NavLink
           key={to}
           to={to}
@@ -29,26 +27,18 @@ export default function Sidebar() {
           end={to === "/"}
           className={({ isActive }) =>
             [
-              // Base styles — match prototype .nav-item
-              "flex items-center gap-2.5 rounded-lg px-3.5 py-2.5",
-              "text-sm font-medium transition-all duration-150",
-              // Active: brand red background + white text (prototype .nav-item.active)
+              // Base styles — metrics per DashPreview.dc.html (12px radius, 11/14 padding)
+              "flex items-center gap-2.5 rounded-xl px-3.5 py-[11px]",
+              "text-sm transition-all duration-150",
+              // Active: brand red background + white text, slightly heavier weight
               // Inactive: muted text, hover grey background
               isActive
-                ? "bg-brand-primary text-brand-on-primary"
-                : "text-brand-fg-muted hover:bg-brand-muted hover:text-brand-fg",
+                ? "bg-brand-primary font-semibold text-brand-on-primary"
+                : "font-medium text-brand-fg-muted hover:bg-brand-muted hover:text-brand-fg",
             ].join(" ")
           }
         >
-          {/* Icon opacity 0.7 when inactive, full when active — matches prototype */}
-          {({ isActive }) => (
-            <>
-              <span className={`text-lg w-5 text-center ${isActive ? "opacity-100" : "opacity-70"}`}>
-                {icon}
-              </span>
-              {label}
-            </>
-          )}
+          {label}
         </NavLink>
       ))}
 
@@ -58,11 +48,10 @@ export default function Sidebar() {
       {/* ── Settings button (static, no route yet) ── */}
       <div className="border-t border-brand-border pt-3">
         <button
-          className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2.5
+          className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-[11px]
                      text-xs font-medium text-brand-fg-muted
                      transition-all duration-150 hover:bg-brand-muted hover:text-brand-fg"
         >
-          <span className="w-5 text-center text-lg opacity-70">⚙️</span>
           Settings
         </button>
       </div>

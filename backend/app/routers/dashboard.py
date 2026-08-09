@@ -1,17 +1,32 @@
 from fastapi import APIRouter, Depends
 from app.core.security import current_therapist
 from app.repositories.base import BaseRepository
+from app.repositories.learner_repository import LearnerRepository
+from app.schemas.dto import CohortClusters
+from app.services.cohort_service import CohortService
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 class DashboardRepository(BaseRepository):
     table = "data"
 
+    def __init__(self):
+        self.learners = LearnerRepository()
+
     def get_stats(self) -> dict:
         flagged_count = 2
         needs_profiling = 3
         high_risk = 1
         inactive = 1
+        total_learners = 5
+
+        # A count(), not len(list_all()). `learners` now holds the whole DAS cohort as well as
+        # the caseload, and PostgREST caps a select at 1,000 rows without erroring — so the old
+        # `len(rows)` would have reported 1,000 forever and moved the whole table to do it.
+        try:
+            total_learners = self.learners.count()
+        except Exception:
+            pass
 
         try:
             activities = self.db.select("*").eq("status", "FLAGGED").table("learning_activities").execute().data
@@ -25,6 +40,7 @@ class DashboardRepository(BaseRepository):
             pass
 
         return {
+            "total_learners": total_learners,
             "flagged": flagged_count,
             "needs_profiling": needs_profiling,
             "high_risk": high_risk,
@@ -66,6 +82,19 @@ class DashboardRepository(BaseRepository):
 
 
 repo = DashboardRepository()
+cohort_svc = CohortService()
+
+
+@router.get("/clusters", response_model=CohortClusters)
+def get_cohort_clusters(_: str = Depends(current_therapist)):
+    """The whole clustered cohort for the analytics scatter (UC2).
+
+    One call rather than one per learner: Graph.jsx previously fetched /learners then a profile
+    per learner, which at cohort scale is thousands of requests. The k-means labels are already
+    columns on `learners` — see scripts/ingest_dial_data.py — so this is a paged SELECT.
+    """
+    return cohort_svc.get_clusters()
+
 
 @router.get("/stats")
 def get_dashboard_stats(_: str = Depends(current_therapist)):

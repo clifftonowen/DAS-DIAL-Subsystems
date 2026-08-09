@@ -1,9 +1,20 @@
 import { useState } from "react";
+import { logIn as apiLogIn, signUp as apiSignUp } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import Brand from "../components/Brand";
 import Button from "../components/Button";
 import Card from "../components/Card";
 
+/**
+ * AuthView — the primary actor's boundary for UC6 Log In and UC8 Sign Up.
+ *
+ * Both flows go through AuthController (`POST /auth/login`, `POST /auth/signup`)
+ * rather than calling Supabase directly, so the AuthView -> AuthController message
+ * in the sequence diagrams is a real request. The tokens the backend returns are
+ * handed to `supabase.auth.setSession`, which is what fires `onAuthStateChange`
+ * in main.jsx and populates the session that `lib/api.js`'s authHeader() reads
+ * before every subsequent request.
+ */
 export default function AuthView({ onAuthed }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -13,29 +24,47 @@ export default function AuthView({ onAuthed }) {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // UC6: AuthView -> AuthController logIn(email, password)
+  async function logIn(email, password) {
+    const session = await apiLogIn(email, password);
+    await supabase.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+    });
+    onAuthed?.();
+  }
+
+  // UC8: AuthView -> AuthController signUp(email, password)
+  async function signUp(email, password) {
+    const result = await apiSignUp(email, password);
+    if (result.email_confirmation_required || !result.access_token) {
+      // The account exists but no session was issued yet, so the therapist stays
+      // signed out until they confirm — UC8's postcondition.
+      setNotice("Account is successfully created. Check your email to confirm, then log in.");
+      setMode("login");
+      return;
+    }
+    await supabase.auth.setSession({
+      access_token: result.access_token,
+      refresh_token: result.refresh_token,
+    });
+    onAuthed?.();
+  }
+
   async function submit(e) {
     e.preventDefault();
     setError("");
     setNotice("");
     setSubmitting(true);
-
-    const { data, error } =
-      mode === "login"
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
-
-    setSubmitting(false);
-
-    if (error) {
-      setError(error.message);
-      return;
+    try {
+      if (mode === "login") await logIn(email, password);
+      else await signUp(email, password);
+    } catch (err) {
+      // api.js surfaces FastAPI's `detail`, so this is the message AuthController sent.
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
-    if (mode === "signup" && !data.session) {
-      setNotice("Check your email to confirm your account, then log in.");
-      setMode("login");
-      return;
-    }
-    onAuthed?.();
   }
 
   return (

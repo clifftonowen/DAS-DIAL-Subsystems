@@ -6,8 +6,10 @@
 // Route tree:
 //   /                → MainPage          (stat cards, calendar, tasks)
 //   /learners        → LearnersPage      (searchable student grid)
-//   /learners/:id    → LearnerDetailPage (radar chart, skill bars, alerts)
-//   /generate        → GeneratePage      (autocomplete + generate activity)
+//   /learners/:id    → LearnerDetailPage (radar chart, skill bars, alerts, activity + review)
+//
+// Activity generation used to live on its own /generate route. It now happens on the learner's
+// own page, where their marks, the generated activity, its grounding and its review sit together.
 //
 // Shell layout (matches prototype .shell div):
 //   .shell-grid (index.css: 220px sidebar | 1fr content, 100dvh)
@@ -16,9 +18,8 @@
 //     └── <main>   <Outlet />      — right column, scrollable
 
 import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
-import { supabase } from "../lib/supabase";
 import Brand from "../components/Brand";
-import Button from "../components/Button";
+import ProfileMenu from "../components/ProfileMenu";
 import DashboardSidebar from "../components/DashboardSidebar";
 import Navbar from "../components/Navbar";
 import UploadView from "./UploadView";
@@ -28,28 +29,25 @@ import UploadView from "./UploadView";
 import MainPage from "./MainPage";
 import LearnersPage from "./LearnersPage";
 import LearnerDetailPage from "./LearnerDetailPage";
-import GeneratePage from "./GeneratePage";
 // --- END DASHBOARD PROTOTYPE ADDITIONS ---
 
 // Inner shell — the actual header + sidebar + outlet layout.
 // Separated from Dashboard so BrowserRouter wraps it correctly.
-function DashboardShell() {
+function DashboardShell({ session }) {
   return (
     // .shell-grid defined in index.css:
     //   grid-template-columns: 220px 1fr
     //   grid-template-rows: auto 1fr
     //   height: 100dvh
-    <div className="shell-grid">
+    <div className="shell-grid bg-brand-bg">
 
       {/* ── Header — spans both columns via .shell-header (index.css) ── */}
       <header className="shell-header flex items-center justify-between
                          border-b border-brand-border bg-white px-6 py-3
                          sticky top-0 z-10">
         <Brand />
-        {/* Sign out delegates directly to Supabase auth — no router needed */}
-        <Button variant="ghost" onClick={() => supabase.auth.signOut()}>
-          Sign out
-        </Button>
+        {/* Profile dropdown (avatar + email + Sign out) — top-right */}
+        <ProfileMenu session={session} />
       </header>
 
       {/* ── Sidebar — left column, rendered on every page ── */}
@@ -67,16 +65,15 @@ function DashboardShell() {
 // Dashboard — the root component rendered by main.jsx when session exists.
 // BrowserRouter lives here so it is completely self-contained within the
 // dashboard and does not affect the auth flow in main.jsx.
-export default function Dashboard() {
+export default function Dashboard({ session }) {
   return (
     <BrowserRouter>
       <Routes>
         {/* DashboardShell provides the header + sidebar frame for all pages */}
-        <Route element={<DashboardShell />}>
+        <Route element={<DashboardShell session={session} />}>
           <Route index element={<MainPage />} />
           <Route path="learners" element={<LearnersPage />} />
           <Route path="learners/:id" element={<LearnerDetailPage />} />
-          <Route path="generate" element={<GeneratePage />} />
         </Route>
       </Routes>
     </BrowserRouter>

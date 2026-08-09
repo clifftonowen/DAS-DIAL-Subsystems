@@ -41,17 +41,25 @@
   /* Header spans both columns so it sits above sidebar + content */
   .shell-header { grid-column: 1 / -1; }
 
-  /* Main page two-column layout: calendar (1fr) | task panel (300px)
-     Used by MainPage.jsx */
+  /* Main page two-column layout: calendar | task panel
+     Used by MainPage.jsx — a flex-1 row inside that page's vertical stack, so it
+     fills whatever height the hero + alerts row leave over.
+
+     Flex row rather than a grid: align-items stretch makes both columns exactly
+     the row's height. space-between pins them to the outer edges. Each child sets
+     its own width in MainPage.jsx.
+
+     Fixed 420px rather than filling the viewport — that is what the calendar needs
+     at its largest (36 padding + 28 header + 14 + 23 day headers + 4 + 298 for six
+     48px week rows ≈ 403), so neither column can grow to dominate the page. The
+     task panel scrolls inside it. Gap per DashPreview.dc.html. */
   .main-layout {
-    display: grid;
-    grid-template-columns: 1fr 300px;
-    grid-template-rows: auto 1fr;
-    gap: 20px;
-    height: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+    gap: 18px;
+    height: 420px;
   }
-  /* Stat card alerts row spans both columns */
-  .main-alerts { grid-column: 1 / -1; }
 
   /* 7-column calendar day grid
      Used by Calendar.jsx */
@@ -60,16 +68,18 @@
     grid-template-columns: repeat(7, 1fr);
     gap: 2px;
   }
-  .cal-day { aspect-ratio: 1; min-height: 48px; }
+  /* Square cells, but clamped: max-height stops a wide column from stretching
+     the month grid vertically — past 48px the cells just look empty. */
+  .cal-day { aspect-ratio: 1; min-height: 32px; max-height: 48px; }
 
   /* Animated fill for skill progress bars (width set inline via style prop)
-     Used by SkillBars.jsx */
+     Was used by SkillBars.jsx, now deleted; kept for any future progress bar. */
   .skill-bar-fill { transition: width 0.6s ease; }
 
   /* Left-border severity colours for deficiency alert cards
      Used by DeficiencyAlerts.jsx — applied based on score thresholds */
-  .deficiency-high   { border-left: 3px solid #E91626; } /* < 30% — Critical  */
-  .deficiency-medium { border-left: 3px solid #F8B508; } /* < 40% — Low       */
+  .deficiency-high   { border-left: 3px solid #FF2E45; } /* < 30% — Critical  */
+  .deficiency-medium { border-left: 3px solid #FFCA28; } /* < 40% — Low       */
   .deficiency-low    { border-left: 3px solid #2563EB; } /* < 50% — Below avg */
 
   /* Lift + red border on hover for student grid cards

@@ -15,6 +15,12 @@ class ActivityStatus(str, Enum):
     FLAGGED = "FLAGGED"
 
 
+class ReviewApprovalStatus(str, Enum):
+    """A therapist's UC4 decision, separate from UC3 automated validation."""
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 class Therapist(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     email: str
@@ -77,4 +83,5 @@ class Review(BaseModel):
     activity_id: UUID
     therapist_id: UUID
     text: str = ""
+    approval_status: ReviewApprovalStatus | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

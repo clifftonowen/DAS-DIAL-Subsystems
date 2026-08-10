@@ -25,7 +25,7 @@ function reviewsStartEmpty() {
   );
 }
 
-test("IT-4.7: a submitted review crosses the real frontend API boundary", async () => {
+test("IT-4.6: a submitted review crosses the real frontend API boundary", async () => {
   const user = userEvent.setup();
   let received;
   reviewsStartEmpty();
@@ -34,6 +34,8 @@ test("IT-4.7: a submitted review crosses the real frontend API boundary", async 
       received = await request.json();
       return HttpResponse.json({
         id: "review-1", activity_id: "activity-1", text: "Useful activity.",
+        approval_status: null,
+        reviewer: { name: "Therapist One", email: "therapist@example.org" },
       });
     }),
   );
@@ -44,11 +46,12 @@ test("IT-4.7: a submitted review crosses the real frontend API boundary", async 
 
   expect(await screen.findByText("Useful activity.")).toBeInTheDocument();
   expect(received).toEqual({
-    activity_id: "activity-1", text: "Useful activity.", status: null,
+    activity_id: "activity-1", text: "Useful activity.", approval_status: null,
   });
+  expect(screen.getByText("Therapist One")).toBeInTheDocument();
 });
 
-test("a controller storage error is displayed without adding a review", async () => {
+test("IT-4.7: a controller storage error is displayed without adding a review", async () => {
   const user = userEvent.setup();
   reviewsStartEmpty();
   server.use(
@@ -62,4 +65,30 @@ test("a controller storage error is displayed without adding a review", async ()
 
   expect(await screen.findByRole("alert")).toHaveTextContent("Review could not be saved");
   expect(document.querySelectorAll("li")).toHaveLength(0);
+});
+
+test("the expanded approval decision crosses the real frontend API boundary", async () => {
+  const user = userEvent.setup();
+  let received;
+  reviewsStartEmpty();
+  server.use(
+    http.post("*/reviews", async ({ request }) => {
+      received = await request.json();
+      return HttpResponse.json({
+        id: "review-1", activity_id: "activity-1", text: "Ready to use.",
+        approval_status: "APPROVED",
+        reviewer: { name: "Therapist One", email: "therapist@example.org" },
+      });
+    }),
+  );
+  render(<ReviewSection activityId="activity-1" />);
+
+  await user.type(screen.getByLabelText("Leave a review"), "Ready to use.");
+  await user.click(screen.getByRole("button", { name: "Approve" }));
+
+  expect(await screen.findByText("Therapist approved")).toBeInTheDocument();
+  expect(received).toEqual({
+    activity_id: "activity-1", text: "Ready to use.",
+    approval_status: "APPROVED",
+  });
 });

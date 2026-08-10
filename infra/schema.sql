@@ -177,6 +177,9 @@ create table if not exists reviews (
   activity_id uuid references learning_activities(id) on delete cascade,
   therapist_id uuid references users(id),
   text text default '',
+  -- UC4 therapist decision. This is deliberately separate from
+  -- learning_activities.status, which belongs to UC3's automated validator.
+  approval_status text check (approval_status in ('APPROVED', 'REJECTED')),
   created_at timestamptz default now()
 );
 

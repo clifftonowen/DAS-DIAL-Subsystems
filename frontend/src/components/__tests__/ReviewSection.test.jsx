@@ -1,4 +1,4 @@
-// UNIT (UC4) — Dashboard review section, with the API module mocked.
+// UNIT (UC4) — learner activity review section, with the API module mocked.
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ReviewSection from "../ReviewSection";
@@ -49,4 +49,37 @@ test("UT-4.11 shows the save error and keeps the review off the list", async () 
 
   expect(await screen.findByRole("alert")).toHaveTextContent("Review could not be saved");
   expect(document.querySelectorAll("li")).toHaveLength(0);
+});
+
+test.each([
+  ["Approve", "APPROVED", "Therapist approved"],
+  ["Not approved", "REJECTED", "Therapist rejected"],
+])("stores the %s decision separately from UC3 status", async (button, decision, label) => {
+  const user = userEvent.setup();
+  submitReview.mockResolvedValue({
+    id: "review-1", text: "Useful activity.", approval_status: decision,
+    reviewer: { name: "Therapist One", email: "therapist@example.org" },
+  });
+  render(<ReviewSection activityId="activity-1" />);
+
+  await user.type(screen.getByLabelText("Leave a review"), "Useful activity.");
+  await user.click(screen.getByRole("button", { name: button }));
+
+  expect(submitReview).toHaveBeenCalledWith("activity-1", "Useful activity.", decision);
+  expect(await screen.findByText(label)).toBeInTheDocument();
+  expect(screen.getByText(`Therapist One · ${label}`)).toBeInTheDocument();
+});
+
+test("restores and displays the persisted reviewer decision", async () => {
+  getReviews.mockResolvedValue([{
+    id: "review-1", text: "Useful activity.", approval_status: "APPROVED",
+    reviewer: { name: "", email: "therapist@example.org" },
+  }]);
+
+  render(<ReviewSection activityId="activity-1" />);
+
+  expect(await screen.findByText("Useful activity.")).toBeInTheDocument();
+  expect(screen.getByText("therapist@example.org · Therapist approved")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Not approved" })).toBeDisabled();
 });

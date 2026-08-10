@@ -127,6 +127,39 @@ def access_token(supabase_env):
     return res.session.access_token
 
 
+@pytest.fixture
+def uc4_activity(supabase_env):
+    """Create one disposable activity for UC4 E2E/system review submission.
+
+    The activity is newer than any seeded row, so LearnerDetailPage selects it
+    as the learner's latest activity. Deleting it also deletes its reviews via
+    the reviews.activity_id ON DELETE CASCADE foreign key.
+    """
+    _require_env("TEST_LEARNER_ID")
+    from supabase import create_client
+
+    learner_id = os.environ["TEST_LEARNER_ID"]
+    sb = create_client(supabase_env["url"], supabase_env["key"])
+    rows = sb.table("learning_activities").insert({
+        "learner_id": learner_id,
+        "content": {"text": "UC4 temporary activity for automated review testing."},
+        "literacy_objective": "UC4 review test",
+        "level": "A2",
+        "status": "GENERATED",
+        "grounded_on": [],
+    }).execute().data
+    if not rows:
+        pytest.fail("could not create the temporary UC4 activity")
+
+    activity = rows[0]
+    yield activity
+
+    try:
+        sb.table("learning_activities").delete().eq("id", activity["id"]).execute()
+    except Exception:
+        pass
+
+
 # --------------------------------------------------------------------------- #
 # System — running backend + headless browser
 # --------------------------------------------------------------------------- #

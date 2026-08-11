@@ -5,6 +5,13 @@ import Button from "../components/Button";
 
 const STEPS = { PICK: "pick", PREVIEW: "preview", DONE: "done" };
 
+const METRICS = [
+  { key: "writing_score", label: "Writing", max: 30 },
+  { key: "phonics_score", label: "Phonics", max: 50 },
+  { key: "word_reading_score", label: "Word Reading", max: 10 },
+  { key: "word_spelling_score", label: "Word Spelling", max: 10 },
+];
+
 export default function UploadView({ learners, onClose, onSaved }) {
   const [learnerId, setLearnerId] = useState(learners[0]?.id ?? "");
   const [file, setFile] = useState(null);
@@ -13,9 +20,34 @@ export default function UploadView({ learners, onClose, onSaved }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [metrics, setMetrics] = useState(() =>
+    Object.fromEntries(METRICS.map((m) => [m.key, "0"]))
+  );
+
+  function updateMetric(key, raw) {
+    if (raw !== "" && !/^-?\d*\.?\d*$/.test(raw)) return;
+    setMetrics((prev) => ({ ...prev, [key]: raw }));
+  }
+
+  function metricError(key, max) {
+    const raw = metrics[key];
+    if (raw === "" || raw === "-" || raw === ".") return "Enter a number";
+    const n = Number(raw);
+    if (isNaN(n)) return "Enter a number";
+    if (n < 0 || n > max) return `Must be between 0 and ${max}`;
+    return null;
+  }
+
+  const metricErrors = Object.fromEntries(METRICS.map((m) => [m.key, metricError(m.key, m.max)]));
+  const hasInvalidMetric = Object.values(metricErrors).some(Boolean);
+
+  function toMetricNumbers() {
+    return Object.fromEntries(METRICS.map((m) => [m.key, Number(metrics[m.key])]));
+  }
+
   async function handleParse(e) {
     e.preventDefault();
-    if (!file || !learnerId) return;
+    if (!file || !learnerId || hasInvalidMetric) return;
     setLoading(true);
     setError("");
     try {
@@ -41,6 +73,7 @@ export default function UploadView({ learners, onClose, onSaved }) {
         strengths: preview.strengths,
         weaknesses: preview.weaknesses,
         confidence_score: preview.confidence_score,
+        ...toMetricNumbers(),
       });
       setStep(STEPS.DONE);
       onSaved?.();
@@ -52,7 +85,7 @@ export default function UploadView({ learners, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/70 p-4">
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
       <Card className="w-full max-w-lg space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg font-bold text-brand-fg">Upload Assessment Data</h2>
@@ -80,6 +113,34 @@ export default function UploadView({ learners, onClose, onSaved }) {
               </select>
             </label>
 
+            <div className="grid grid-cols-2 gap-3">
+              {METRICS.map((m) => {
+                const err = metricErrors[m.key];
+                return (
+                  <label key={m.key} className="block text-sm font-medium text-brand-fg">
+                    {m.label}
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={metrics[m.key]}
+                      onChange={(e) => updateMetric(m.key, e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      aria-invalid={!!err}
+                      className={`mt-1 w-full rounded-lg border-2 p-2 text-sm outline-none transition-colors ${
+                        err
+                          ? "border-brand-destructive focus:border-brand-destructive"
+                          : "border-brand-border focus:border-brand-primary"
+                      }`}
+                    />
+                    <p className="mt-0.5 text-[11px] text-brand-fg-muted">Valid range: 0–{m.max}</p>
+                    {err && (
+                      <p className="mt-0.5 text-[11px] font-medium text-brand-destructive">{err}</p>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+
             <label className="block text-sm font-medium text-brand-fg">
               Assessment file (PDF or DOCX)
               <input
@@ -90,7 +151,7 @@ export default function UploadView({ learners, onClose, onSaved }) {
               />
             </label>
 
-            <Button type="submit" disabled={!file || loading}>
+            <Button type="submit" disabled={!file || loading || hasInvalidMetric}>
               {loading ? "Parsing…" : "Parse report"}
             </Button>
           </form>
@@ -99,14 +160,12 @@ export default function UploadView({ learners, onClose, onSaved }) {
         {step === STEPS.PREVIEW && preview && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-sm text-brand-fg-muted">Confidence score</p>
-                <p className="text-lg font-semibold text-brand-fg">{preview.confidence_score}</p>
-              </div>
-              <div>
-                <p className="text-sm text-brand-fg-muted">Risk score</p>
-                <p className="text-lg font-semibold text-brand-fg">{preview.risk_score}</p>
-              </div>
+              {METRICS.map((m) => (
+                <div key={m.key}>
+                  <p className="text-sm text-brand-fg-muted">{m.label}</p>
+                  <p className="text-lg font-semibold text-brand-fg">{metrics[m.key]}</p>
+                </div>
+              ))}
             </div>
 
             <table className="w-full text-sm">
@@ -143,9 +202,7 @@ export default function UploadView({ learners, onClose, onSaved }) {
               </div>
             </div>
 
-            {preview.notes && (
-              <p className="text-xs italic text-brand-fg-muted">{preview.notes}</p>
-            )}
+            {preview.notes && <p className="text-xs italic text-brand-fg-muted">{preview.notes}</p>}
 
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setStep(STEPS.PICK)}>Back</Button>

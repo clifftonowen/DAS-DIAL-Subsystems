@@ -88,6 +88,10 @@ def parse_assessment_report(file: UploadFile, learner_id: str) -> AssessmentPrev
         risk_score=risk_score,
         task_results=task_results,
         notes=notes,
+        writing_score=0.0,
+        phonics_score=0.0,
+        word_reading_score=0.0,
+        word_spelling_score=0.0,
     )
 
 

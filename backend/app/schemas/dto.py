@@ -1,7 +1,9 @@
 """Request/response DTOs for the API layer."""
 from typing import Literal, Optional
 from pydantic import BaseModel, EmailStr, field_validator
+from app.ingestion.dial_features import NORMALISATION_CEILINGS
 
+MetricType = Literal["writing", "phonics", "word_reading", "word_spelling"]
 
 class Credentials(BaseModel):
     email: EmailStr
@@ -84,8 +86,6 @@ class TaskResult(BaseModel):
 
 
 class AssessmentPreview(BaseModel):
-    """Returned by POST /assessments/preview. The frontend renders this as
-    a review card; the therapist confirms before anything is saved."""
     learner_id: str
     assessment_date: str
     tasks: list[TaskResult] = []
@@ -95,6 +95,18 @@ class AssessmentPreview(BaseModel):
     risk_score: float = 0.0
     task_results: dict = {}
     notes: str = ""
+    writing_score: float = 0.0
+    phonics_score: float = 0.0
+    word_reading_score: float = 0.0
+    word_spelling_score: float = 0.0
+
+
+_METRIC_TO_FEATURE = {
+    "writing_score": "writing",
+    "phonics_score": "phonics",
+    "word_reading_score": "word_reading_accuracy",
+    "word_spelling_score": "word_spelling",
+}
 
 
 class AssessmentConfirmRequest(BaseModel):
@@ -105,6 +117,24 @@ class AssessmentConfirmRequest(BaseModel):
     strengths: list[str] = []
     weaknesses: list[str] = []
     confidence_score: float = 0.0
+    writing_score: float = 0.0
+    phonics_score: float = 0.0
+    word_reading_score: float = 0.0
+    word_spelling_score: float = 0.0
+
+    @field_validator(
+        "writing_score", "phonics_score", "word_reading_score", "word_spelling_score"
+    )
+    @classmethod
+    def score_within_rubric(cls, value: float, info) -> float:
+        """0 <= score <= ceiling, matching the frontend's displayed valid range."""
+        max_score = NORMALISATION_CEILINGS[_METRIC_TO_FEATURE[info.field_name]]
+        if not (0 <= value <= max_score):
+            raise ValueError(
+                f"{info.field_name} must be between 0 and {max_score:g} "
+                f"(got {value:g})"
+            )
+        return value
 
 
 # ── Cohort clustering — GET /dashboard/clusters (UC2) ────────────────────────

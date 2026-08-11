@@ -9,8 +9,7 @@ svc = AssessmentService()
 
 
 @router.post("/preview", response_model=AssessmentPreview)
-def preview_assessment(learner_id: str = Form(...), file: UploadFile = File(...),
-                        _: str = Depends(current_therapist)):
+def preview_assessment(learner_id: str = Form(...), file: UploadFile = File(...), _: str = Depends(current_therapist)):
     try:
         return svc.parse_preview(learner_id, file)
     except InvalidFormatError as e:

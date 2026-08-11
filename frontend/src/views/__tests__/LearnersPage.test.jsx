@@ -10,6 +10,9 @@
 //
 // So the assertions here are mostly about WHERE the work happens: that paging and search are
 // parameters on the request rather than operations on the response.
+//
+// UC9 (View Learner List — the assigned-vs-all toggle and the retry) lives in its own file,
+// LearnersPage.uc9.test.jsx, per the use-case naming convention.
 
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

@@ -150,7 +150,10 @@ export default function LearnersPage() {
           ))}
         </div>
       ) : error ? (
-        <div className="py-10 text-center text-red-600">Failed to load learners: {error}</div>
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <div className="text-red-600">Failed to load learners: {error}</div>
+          <PagerButton onClick={loadLearners}>Retry</PagerButton>
+        </div>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-[14px] overflow-y-auto pb-5">
           {learners.map((student) => (

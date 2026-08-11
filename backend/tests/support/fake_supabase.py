@@ -77,10 +77,11 @@ class _Result:
 class _Query:
     """A chainable query/command builder bound to one table in the store."""
 
-    def __init__(self, store, table, log=None):
+    def __init__(self, store, table, log=None, fail_on_execute=None):
         self._store = store
         self._table = table
         self._log = log if log is not None else []
+        self._fail_on_execute = fail_on_execute
         self._op = "select"
         self._payload = None
         self._eq = []   # list of (col, value) equality filters
@@ -219,6 +220,11 @@ class _Query:
 
     # -- terminal --
     def execute(self):
+        # An opt-in driver failure: `fail_on_execute` lets an integration test put the
+        # database out of reach from the bottom of the call graph. Off by default, so no
+        # existing test is touched — the repositories reach the driver exactly here.
+        if self._fail_on_execute is not None:
+            raise self._fail_on_execute
         # Record every round trip so an integration test can assert that an edge
         # of the call graph was NOT taken (e.g. IT-6.4: no lookup on the
         # invalid-credentials path).
@@ -578,16 +584,18 @@ class FakeSupabase:
     """
 
     def __init__(self, seed=None, user_id="test-therapist-id",
-                 auth_users=None, confirm_email=False):
+                 auth_users=None, confirm_email=False, fail_on_execute=None):
         # Deep-ish copy so tests don't leak state between cases.
         self.store = {k: [dict(r) for r in v] for k, v in (seed or {}).items()}
         self.auth = _Auth(user_id, auth_users=auth_users, confirm_email=confirm_email)
         # Every executed round trip, as (table, op) — lets a test prove an edge
         # was never taken. See `queries_on()`.
         self.queries = []
+        self._fail_on_execute = fail_on_execute
 
     def table(self, name):
-        return _Query(self.store, name, log=self.queries)
+        return _Query(self.store, name, log=self.queries,
+                      fail_on_execute=self._fail_on_execute)
 
     def rpc(self, name, params=None):
         return _RpcCall(self.store, name, params, log=self.queries)

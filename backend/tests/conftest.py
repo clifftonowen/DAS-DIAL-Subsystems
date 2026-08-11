@@ -69,9 +69,11 @@ def fake_supabase(monkeypatch):
 
     installed = {}
 
-    def make(seed=None, user_id="test-therapist-id", auth_users=None, confirm_email=False):
+    def make(seed=None, user_id="test-therapist-id", auth_users=None, confirm_email=False,
+             fail_on_execute=None):
         fake = FakeSupabase(seed=seed, user_id=user_id,
-                            auth_users=auth_users, confirm_email=confirm_email)
+                            auth_users=auth_users, confirm_email=confirm_email,
+                            fail_on_execute=fail_on_execute)
         getter = lambda: fake
         sc.get_supabase.cache_clear()          # drop any real cached client
         sc.get_auth_supabase.cache_clear()

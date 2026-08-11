@@ -28,8 +28,15 @@
 #   email, which exhausts the default 2/hour quota and fails the sign-up outright.
 name: tests
 
+# Scoped to main + PRs rather than a bare `push:`. A bare push trigger ran a SECOND, identical
+# workflow for every push to a branch that already had a PR open — and the two runs' `system` jobs
+# then drove the same Supabase test project at the same time. See the concurrency note on the e2e
+# job below for what that collision actually broke.
+#
+# Trade-off, deliberately accepted: a branch gets no CI until a PR is open for it.
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -77,7 +84,28 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - run: npm test
+      # Unit only. These two tiers used to run together under `npm test`, which left the
+      # frontend's integration level invisible in the job list even though it was executing.
+      - run: npm run test:unit
+
+  # --------------------------------------------------------- integration (fe)
+  # Jest + MSW: the view/component is real, `lib/api.js` is real, and only the network is
+  # replaced. Hermetic — no secrets, no browser, no backend — so it runs beside the unit tiers
+  # rather than behind them. See frontend/src/views/__integration__/README.md.
+  frontend-integration:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run test:integration
 
   # ---------------------------------------------------------------------- e2e
   # Gated on BOTH backend levels so the job graph mirrors the pyramid
@@ -86,6 +114,24 @@ jobs:
   e2e:
     needs: [backend-unit, backend-integration]
     runs-on: ubuntu-latest
+    # SERIALISED ACROSS EVERY RUN OF THIS REPO, because the tiers below this line share one
+    # mutable resource: the Supabase test project, and within it a single TEST_LEARNER_ID.
+    #
+    # What overlapping runs actually broke (PR #23): `uc4_activity` inserts one activity per run
+    # for that learner, and LearnerDetailPage renders the NEWEST activity — so each run's browser
+    # could be looking at the other run's row. UC4's delete-then-expect-a-rejected-write test then
+    # deleted its own activity while the page showed the other's, the write succeeded, and the
+    # test timed out waiting for an error that was never coming.
+    #
+    # The group is a LITERAL, not keyed on ref: two different branches collide just as badly as
+    # two runs of one branch. cancel-in-progress is false because a half-finished run leaves rows
+    # behind in a shared project — queue behind it, never kill it.
+    #
+    # Known limit: GitHub keeps only one PENDING entry per group, so under heavy traffic a queued
+    # job can be cancelled. Better than corrupting a live run.
+    concurrency:
+      group: supabase-test-project
+      cancel-in-progress: false
     defaults:
       run:
         working-directory: backend
@@ -116,6 +162,10 @@ jobs:
   system:
     needs: [frontend-unit, e2e]
     runs-on: ubuntu-latest
+    # Same shared Supabase test project as `e2e` — same group. See the note there.
+    concurrency:
+      group: supabase-test-project
+      cancel-in-progress: false
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
@@ -183,9 +233,77 @@ jobs:
           path: test-artifacts/
           if-no-files-found: ignore
 
-  # ------------------------------------------------------- frontend-e2e (future)
-  # Placeholder — a Playwright browser-e2e stack is scaffolded in frontend/e2e/
-  # but not installed yet. When adopted, add a `frontend-e2e` job here mirroring
-  # `system`: setup-node, `npm ci`, `npx playwright install --with-deps`, start
-  # backend + `npm run preview`, `npm run test:e2e`, and upload the Playwright
-  # report on failure. See frontend/e2e/README.md.
+  # ------------------------------------------------------------- frontend-e2e
+  # Playwright against the real built UI. Same pyramid level as `system` (a browser driving a
+  # running app), so it gates on the same tiers and shares the Supabase concurrency group.
+  frontend-e2e:
+    needs: [frontend-unit, frontend-integration, e2e]
+    runs-on: ubuntu-latest
+    # Drives the same Supabase test project as `e2e`/`system` — same group. See the note on e2e.
+    concurrency:
+      group: supabase-test-project
+      cancel-in-progress: false
+    env:
+      TEST_THERAPIST_EMAIL: ${{ secrets.TEST_THERAPIST_EMAIL }}
+      TEST_THERAPIST_PASSWORD: ${{ secrets.TEST_THERAPIST_PASSWORD }}
+      FRONTEND_URL: http://127.0.0.1:4173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend deps
+        working-directory: backend
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Start backend (uvicorn)
+        working-directory: backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
+          # The browser loads the app from FRONTEND_URL and calls this API cross-origin, so that
+          # exact origin must be allowed or log-in fails with "Failed to fetch" rather than an
+          # HTTP error. Same reasoning as the `system` job.
+          CORS_ORIGINS: http://127.0.0.1:4173
+        run: |
+          nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/health && break || sleep 1
+          done
+
+      - name: Build & serve frontend
+        working-directory: frontend
+        env:
+          VITE_API_URL: http://127.0.0.1:8000
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run build
+          nohup npm run preview -- --port 4173 --host 127.0.0.1 > preview.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:4173 >/dev/null && break || sleep 1
+          done
+
+      # The specs self-skip without the therapist credentials, so an unconfigured repo stays
+      # green — check the output for skips before treating a pass as evidence.
+      - name: Run Playwright tests
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          if-no-files-found: ignore

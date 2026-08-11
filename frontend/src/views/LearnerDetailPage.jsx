@@ -140,10 +140,16 @@ export default function LearnerDetailPage({ learnerId, onBack }) {
     setActivityResult(null);
     try {
       const result = await generateActivity(id, { notes: notes.trim() });
-      if (result.status === "GENERATED") {
-        await refreshActivities();
-      } else {
+      // TESTED AGAINST THE REFUSAL, NOT AGAINST THE SUCCESS STATUSES. This used to read
+      // `=== "GENERATED"`, which silently stopped being true when UC3 gained its validate loop:
+      // the backend now returns VALIDATED or FLAGGED, so a successful generation fell to the
+      // else branch, the list was never re-read, and the therapist watched the spinner stop with
+      // nothing on screen and no error. INSUFFICIENT_CONTEXT is the only status that means no row
+      // was written, so keying on it is what stays correct when the status set grows again.
+      if (result.status === "INSUFFICIENT_CONTEXT") {
         setActivityResult(result);
+      } else {
+        await refreshActivities();
       }
     } catch (err) {
       console.error("Failed to generate activity", err);

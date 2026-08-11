@@ -44,6 +44,9 @@ const activityRow = (overrides = {}) => ({
     ],
   },
   literacy_objective: "",
+  // A STORED ROW, so GENERATED is still a real value here — it is the column default and what
+  // every row written before UC3's validate loop carries. Not to be confused with the generate
+  // RESPONSE, which now says VALIDATED or FLAGGED and never GENERATED.
   status: "GENERATED",
   grounded_on: ["Rhyme Time (a.pdf p.4)"],
   ...overrides,
@@ -75,7 +78,7 @@ const generate = async (user) =>
 // ── the request ───────────────────────────────────────────────────────────────
 test("generates for the learner already on screen, with no band", async () => {
   const user = userEvent.setup();
-  api.generateActivity.mockResolvedValue({ status: "GENERATED", content: "x", query: "q",
+  api.generateActivity.mockResolvedValue({ status: "VALIDATED", content: "x", query: "q",
                                            learner_id: LEARNER_ID, grounding: [] });
   renderPage();
   await generate(user);
@@ -88,7 +91,7 @@ test("generates for the learner already on screen, with no band", async () => {
 
 test("sends the focus field as notes", async () => {
   const user = userEvent.setup();
-  api.generateActivity.mockResolvedValue({ status: "GENERATED", content: "x", query: "q",
+  api.generateActivity.mockResolvedValue({ status: "VALIDATED", content: "x", query: "q",
                                            learner_id: LEARNER_ID, grounding: [] });
   renderPage();
   await user.type(await screen.findByLabelText("Optional focus"), "rhyming games");
@@ -103,7 +106,7 @@ test("sends the focus field as notes", async () => {
 test("re-reads the activity list so the panel shows the new activity", async () => {
   const user = userEvent.setup();
   api.getLearnerActivities.mockResolvedValue([activityRow()]);
-  api.generateActivity.mockResolvedValue({ status: "GENERATED", content: "ignored", query: "q",
+  api.generateActivity.mockResolvedValue({ status: "VALIDATED", content: "ignored", query: "q",
                                            learner_id: LEARNER_ID, grounding: [] });
   renderPage();
   expect(await screen.findByText(/Clap the rhyme/)).toBeInTheDocument();

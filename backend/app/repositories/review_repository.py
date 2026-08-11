@@ -4,7 +4,7 @@ from app.repositories.base import BaseRepository
 class ReviewRepository(BaseRepository):
     table = "reviews"
 
-    def save(self, review: dict) -> dict:
+    def save(self, review: dict) -> list[dict]:
         return self.db.upsert(review).execute().data
 
     def find_by_activity(self, activity_id: str) -> list[dict]:

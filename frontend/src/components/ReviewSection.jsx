@@ -1,28 +1,26 @@
-// ReviewSection.jsx — the Dashboard
+// ReviewSection.jsx — reviews for the latest activity on LearnerDetailPage
 //
 // The therapist writes a comment and chooses one of three actions:
 //
-//   Approve       comment + mark the activity VALIDATED
-//   Not approved  comment + mark it FLAGGED
+//   Approve       comment + record the therapist decision APPROVED
+//   Not approved  comment + record the therapist decision REJECTED
 //   Upload        comment only, verdict left open
 //
 // Props:
 //   activityId    {string} the activity being reviewed
-//   initialStatus {string} its status when the page loaded, if known
-//   onStatusChange{func}   called with the new status after a verdict lands
 
 import { useEffect, useState } from "react";
 import Button from "./Button";
 import { getReviews, submitReview } from "../lib/api";
 
 const VERDICT_LABEL = {
-  VALIDATED: "Approved",
-  FLAGGED: "Not approved",
+  APPROVED: "Therapist approved",
+  REJECTED: "Therapist rejected",
 };
 
 const VERDICT_STYLE = {
-  VALIDATED: "bg-green-50 text-green-700",
-  FLAGGED: "bg-red-50 text-red-700",
+  APPROVED: "bg-green-50 text-green-700",
+  REJECTED: "bg-red-50 text-red-700",
 };
 
 function formatDate(value) {
@@ -31,15 +29,21 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString();
 }
 
-export default function ReviewSection({ activityId, initialStatus = null, onStatusChange }) {
+function reviewerLabel(review) {
+  return review.reviewer?.name?.trim()
+    || review.reviewer?.email
+    || review.reviewer?.id
+    || review.therapist_id
+    || "Unknown reviewer";
+}
+
+export default function ReviewSection({ activityId }) {
   const [reviews, setReviews] = useState([]);
   const [text, setText] = useState("");
-  const [status, setStatus] = useState(initialStatus);
+  const [approvalStatus, setApprovalStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(null);   
   const [error, setError] = useState(null);
-
-  useEffect(() => setStatus(initialStatus), [initialStatus, activityId]);
 
   useEffect(() => {
     // `cancelled` guards against the therapist switching activities before this
@@ -48,9 +52,16 @@ export default function ReviewSection({ activityId, initialStatus = null, onStat
 
     async function load() {
       setLoading(true);
+      setApprovalStatus(null);
       try {
         const data = await getReviews(activityId);
-        if (!cancelled) setReviews(data ?? []);
+        if (!cancelled) {
+          const loaded = data ?? [];
+          setReviews(loaded);
+          setApprovalStatus(
+            loaded.find((review) => review.approval_status)?.approval_status ?? null,
+          );
+        }
       } catch (err) {
         console.error("Could not load reviews", err);
         if (!cancelled) setReviews([]);
@@ -63,7 +74,7 @@ export default function ReviewSection({ activityId, initialStatus = null, onStat
     return () => { cancelled = true; };
   }, [activityId]);
 
-  const decided = status === "VALIDATED" || status === "FLAGGED";
+  const decided = approvalStatus === "APPROVED" || approvalStatus === "REJECTED";
   const busy = pending !== null;
 
   async function submit(verdict) {
@@ -77,8 +88,7 @@ export default function ReviewSection({ activityId, initialStatus = null, onStat
       setReviews((prev) => [saved, ...prev]);   
       setText("");
       if (verdict) {
-        setStatus(verdict);
-        onStatusChange?.(verdict);
+        setApprovalStatus(verdict);
       }
     } catch (err) {
       setError(err.message);
@@ -94,8 +104,8 @@ export default function ReviewSection({ activityId, initialStatus = null, onStat
           Leave a review
         </label>
         {decided && (
-          <span className={`rounded px-2 py-0.5 text-xs font-semibold ${VERDICT_STYLE[status]}`}>
-            {VERDICT_LABEL[status]}
+          <span className={`rounded px-2 py-0.5 text-xs font-semibold ${VERDICT_STYLE[approvalStatus]}`}>
+            {VERDICT_LABEL[approvalStatus]}
           </span>
         )}
       </div>
@@ -123,8 +133,7 @@ export default function ReviewSection({ activityId, initialStatus = null, onStat
 
       {decided && (
         <p className="mt-2 text-xs text-brand-fg-muted">
-          This activity has been marked {VERDICT_LABEL[status].toLowerCase()}. That decision is
-          final, but you can still add a comment.
+          The therapist decision is final, but you can still add a comment.
         </p>
       )}
 
@@ -133,12 +142,12 @@ export default function ReviewSection({ activityId, initialStatus = null, onStat
                 loading={pending === "COMMENT"} disabled={busy || !text.trim()}>
           Upload
         </Button>
-        <Button variant="secondary" onClick={() => submit("FLAGGED")}
-                loading={pending === "FLAGGED"} disabled={busy || decided || !text.trim()}>
+        <Button variant="secondary" onClick={() => submit("REJECTED")}
+                loading={pending === "REJECTED"} disabled={busy || decided || !text.trim()}>
           Not approved
         </Button>
-        <Button variant="primary" onClick={() => submit("VALIDATED")}
-                loading={pending === "VALIDATED"} disabled={busy || decided || !text.trim()}>
+        <Button variant="primary" onClick={() => submit("APPROVED")}
+                loading={pending === "APPROVED"} disabled={busy || decided || !text.trim()}>
           Approve
         </Button>
       </div>
@@ -153,11 +162,11 @@ export default function ReviewSection({ activityId, initialStatus = null, onStat
             {reviews.map((review, index) => (
               <li key={review.id ?? index} className="rounded-lg bg-brand-muted p-3">
                 <p className="whitespace-pre-wrap text-sm text-brand-fg">{review.text}</p>
-                {formatDate(review.created_at) && (
-                  <p className="mt-1.5 text-xs text-brand-fg-muted">
-                    {formatDate(review.created_at)}
-                  </p>
-                )}
+                <p className="mt-1.5 text-xs text-brand-fg-muted">
+                  {reviewerLabel(review)}
+                  {formatDate(review.created_at) && ` · ${formatDate(review.created_at)}`}
+                  {review.approval_status && ` · ${VERDICT_LABEL[review.approval_status]}`}
+                </p>
               </li>
             ))}
           </ul>

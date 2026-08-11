@@ -21,6 +21,22 @@ def test_submit_review_returns_the_service_review(client, auth_ok, monkeypatch):
     submit.assert_called_once_with("activity-1", auth_ok, "Useful.", None)
 
 
+def test_submit_review_accepts_only_a_uc4_approval_decision(
+    client, auth_ok, monkeypatch,
+):
+    """UC4 extension: UC3 statuses cannot cross the review API boundary."""
+    submit = Mock()
+    monkeypatch.setattr(reviews_router.svc, "submit_review", submit)
+
+    response = client.post("/reviews", json={
+        "activity_id": "activity-1", "text": "Useful.",
+        "approval_status": "VALIDATED",
+    })
+
+    assert response.status_code == 422
+    submit.assert_not_called()
+
+
 def test_submit_review_rejects_blank_text_before_the_service(client, auth_ok, monkeypatch):
     """UT-4.6: an empty review is invalid input, so no review is saved."""
     submit = Mock()
@@ -44,7 +60,7 @@ def test_submit_review_requires_an_authenticated_therapist(client, monkeypatch):
     submit.assert_not_called()
 
 
-def test_submit_review_returns_a_storage_error_to_the_dashboard(client, auth_ok, monkeypatch):
+def test_submit_review_returns_a_storage_error_to_the_client(client, auth_ok, monkeypatch):
     """UT-4.8: a failed save is presented as the controller's error response."""
     submit = Mock(side_effect=StorageError("Review could not be saved"))
     monkeypatch.setattr(reviews_router.svc, "submit_review", submit)

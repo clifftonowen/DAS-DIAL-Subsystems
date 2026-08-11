@@ -1,4 +1,4 @@
-// Regression test for the UC4 verdict hand-off: the selected status must cross the API boundary.
+// Regression test for the UC4 decision hand-off.
 import { submitReview } from "../api";
 import { supabase } from "../supabase";
 
@@ -14,15 +14,16 @@ beforeEach(() => {
   });
 });
 
-test("passes the selected verdict status in the review request", async () => {
-  await submitReview("activity-1", "Useful activity.", "VALIDATED");
+test("passes the selected approval status in the review request", async () => {
+  await submitReview("activity-1", "Useful activity.", "APPROVED");
 
   expect(fetch).toHaveBeenCalledWith(
     "http://localhost:8000/reviews",
     expect.objectContaining({
       method: "POST",
       body: JSON.stringify({
-        activity_id: "activity-1", text: "Useful activity.", status: "VALIDATED",
+        activity_id: "activity-1", text: "Useful activity.",
+        approval_status: "APPROVED",
       }),
     }),
   );

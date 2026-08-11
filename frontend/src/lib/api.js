@@ -86,8 +86,10 @@ export const getLearnerActivities = (learnerId) => api(`/profiles/${learnerId}/a
 
 export const shareActivity = (activityId, recipientEmail) =>
   api("/share", { method: "POST", body: JSON.stringify({ activity_id : activityId, recipient_email:recipientEmail }) });
-export const submitReview = (activityId, text, status = null) =>
-  api("/reviews", { method: "POST", body: JSON.stringify({ activity_id: activityId, text, status }) });
+export const submitReview = (activityId, text, approvalStatus = null) =>
+  api("/reviews", { method: "POST", body: JSON.stringify({
+    activity_id: activityId, text, approval_status: approvalStatus,
+  }) });
 export const getReviews = (activityId) => api(`/reviews/${activityId}`);
 
 

@@ -66,7 +66,10 @@ class _FakeLLM:
         self.completion = "Rhyme Time\n\n1. Clap the onset.\n2. Blend the rime.\n3. Say the word."
         self.complete_calls = []
 
-    def embed_many(self, texts):
+    def embed_many(self, texts, is_query=False):
+        # is_query mirrors the real provider contract (query vs document embeddings); the fake
+        # ignores it but must ACCEPT it, or the real LLMApiClient.embed(..., is_query=...) call
+        # fails with a TypeError once this branch merges main.
         return [[0.1, 0.2, 0.3] for _ in texts]
 
     def complete(self, prompt, system=None, temperature=None, seed=None):

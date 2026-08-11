@@ -1,5 +1,5 @@
 """Request/response DTOs for the API layer."""
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, EmailStr, field_validator
 
 
@@ -56,7 +56,7 @@ class GenerationParams(BaseModel):
 class ReviewIn(BaseModel):
     activity_id: str
     text: str
-    status: str | None = None
+    approval_status: Literal["APPROVED", "REJECTED"] | None = None
 
     @field_validator("text")
     @classmethod

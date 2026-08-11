@@ -365,12 +365,6 @@ export default function LearnerDetailPage({ learnerId, onBack }) {
             />
             <ReviewSection
               activityId={latestActivity.id}
-              initialStatus={latestActivity.status}
-              // Keep the badge above in step with the verdict just submitted,
-              // rather than reloading the whole page for one field.
-              onStatusChange={(status) =>
-                setLatestActivity((prev) => (prev ? { ...prev, status } : prev))
-              }
             />
           </div>
         </>

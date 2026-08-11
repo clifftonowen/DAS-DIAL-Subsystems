@@ -26,3 +26,10 @@ class UserRepository(BaseRepository):
         # Drop NULL columns so the entity's own defaults apply (`name` is
         # nullable in infra/schema.sql but non-optional on Therapist).
         return Therapist(**{k: v for k, v in rows[0].items() if v is not None})
+
+    def find_by_id(self, therapist_id: str) -> Therapist | None:
+        """Read the reviewer identity UC4 displays beside a saved review."""
+        rows = self.db.select("*").eq("id", therapist_id).execute().data
+        if not rows:
+            return None
+        return Therapist(**{k: v for k, v in rows[0].items() if v is not None})

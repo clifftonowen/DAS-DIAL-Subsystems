@@ -14,7 +14,8 @@
 #   SUPABASE_ANON_KEY         anon key (frontend build)
 #   TEST_THERAPIST_EMAIL      a seeded therapist user in the test project
 #   TEST_THERAPIST_PASSWORD   that user's password
-#   TEST_LEARNER_ID           a learner id from infra/seed.sql, for UC2's e2e test.
+#   TEST_LEARNER_ID           a learner id from infra/seed.sql, for UC2's e2e test and
+#                             UC4's disposable review activity in E2E/system tests.
 #                             Seed the project first: the learner must exist (FK on
 #                             learner_sittings.learner_id) AND have at least one sitting,
 #                             or generate_profile correctly returns 409 "no scores on
@@ -121,6 +122,7 @@ jobs:
       SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
       TEST_THERAPIST_EMAIL: ${{ secrets.TEST_THERAPIST_EMAIL }}
       TEST_THERAPIST_PASSWORD: ${{ secrets.TEST_THERAPIST_PASSWORD }}
+      TEST_LEARNER_ID: ${{ secrets.TEST_LEARNER_ID }}
       FRONTEND_URL: http://127.0.0.1:4173
       SYSTEM_ARTIFACT_DIR: ${{ github.workspace }}/test-artifacts
     steps:

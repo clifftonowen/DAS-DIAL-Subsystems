@@ -173,13 +173,21 @@ export default function UploadView({ learners, onClose, onSaved }) {
               </select>
             </label>
 
+            {/* Hint and error text hang off aria-describedby rather than sitting inside the
+                <label>. Nested, they become part of the field's accessible NAME, so a screen
+                reader announces "Phonics Valid range: 0–50 · leave blank if not assessed" as
+                what the box is called. describedby is the relationship that means "extra
+                information about this field". */}
             <div className="grid grid-cols-2 gap-3">
-              <label htmlFor="upload-semester" className="block text-sm font-medium text-brand-fg">
-                Semester
+              <div>
+                <label htmlFor="upload-semester" className="block text-sm font-medium text-brand-fg">
+                  Semester
+                </label>
                 <select
                   id="upload-semester"
                   value={semester}
                   onChange={(e) => setSemester(e.target.value)}
+                  aria-describedby="upload-semester-hint"
                   className="mt-1 w-full rounded-lg border border-brand-border p-2 text-sm"
                 >
                   {semesters.length === 0 && <option value="">Loading…</option>}
@@ -187,17 +195,20 @@ export default function UploadView({ learners, onClose, onSaved }) {
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
-                <p className="mt-0.5 text-[11px] text-brand-fg-muted">
+                <p id="upload-semester-hint" className="mt-0.5 text-[11px] text-brand-fg-muted">
                   Which semester these marks belong to
                 </p>
-              </label>
+              </div>
 
-              <label htmlFor="upload-band" className="block text-sm font-medium text-brand-fg">
-                Band
+              <div>
+                <label htmlFor="upload-band" className="block text-sm font-medium text-brand-fg">
+                  Band
+                </label>
                 <select
                   id="upload-band"
                   value={band}
                   onChange={(e) => setBand(e.target.value)}
+                  aria-describedby="upload-band-hint"
                   className="mt-1 w-full rounded-lg border border-brand-border p-2 text-sm"
                 >
                   <option value="">Not recorded</option>
@@ -205,10 +216,10 @@ export default function UploadView({ learners, onClose, onSaved }) {
                     <option key={b} value={b}>{b}</option>
                   ))}
                 </select>
-                <p className="mt-0.5 text-[11px] text-brand-fg-muted">
+                <p id="upload-band-hint" className="mt-0.5 text-[11px] text-brand-fg-muted">
                   The paper sat — the rubric differs by band
                 </p>
-              </label>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -216,8 +227,10 @@ export default function UploadView({ learners, onClose, onSaved }) {
                 const err = metricErrors[key];
                 const spec = specFor(key);
                 return (
-                  <label key={key} htmlFor={`upload-${key}`} className="block text-sm font-medium text-brand-fg">
-                    {spec?.label ?? key}
+                  <div key={key}>
+                    <label htmlFor={`upload-${key}`} className="block text-sm font-medium text-brand-fg">
+                      {spec?.label ?? key}
+                    </label>
                     <input
                       id={`upload-${key}`}
                       type="text"
@@ -226,20 +239,21 @@ export default function UploadView({ learners, onClose, onSaved }) {
                       onChange={(e) => updateMetric(key, e.target.value)}
                       onFocus={(e) => e.target.select()}
                       aria-invalid={!!err}
+                      aria-describedby={`upload-${key}-hint`}
                       className={`mt-1 w-full rounded-lg border-2 p-2 text-sm outline-none transition-colors ${
                         err
                           ? "border-brand-destructive focus:border-brand-destructive"
                           : "border-brand-border focus:border-brand-primary"
                       }`}
                     />
-                    <p className="mt-0.5 text-[11px] text-brand-fg-muted">
+                    <p id={`upload-${key}-hint`} className="mt-0.5 text-[11px] text-brand-fg-muted">
                       {spec ? `Valid range: 0–${spec.max}` : "Valid range: 0–…"}
                       {" · leave blank if not assessed"}
                     </p>
                     {err && (
                       <p className="mt-0.5 text-[11px] font-medium text-brand-destructive">{err}</p>
                     )}
-                  </label>
+                  </div>
                 );
               })}
             </div>

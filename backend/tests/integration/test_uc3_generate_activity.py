@@ -6,24 +6,27 @@ on its own in test_uc5_retrieve_strategy.py (levels 1-2). This file picks up abo
     Level 4   ActivityController  --generate(learner_id, params)-->        [HTTP boundary]
     Level 3   ActivityGenerationService  --find_by_id-->        LearnerRepository
                                          --retrieve-->          CurriculumRetrievalService (UC5)
-                                         --complete-->          LLMApiClient
+                                         --run-->               ActivityGraph
                                          --save-->              ActivityRepository
+    Level 2   ActivityGraph  --generate-->  GenerativeAgent  --complete-->  LLMApiClient
+                             --validate-->  ValidativeAgent  --complete-->  LLMApiClient
     (below)   the two boundaries: Supabase (faked RPC + tables) and the LLM (faked provider)
 
 Only the boundaries are faked. Everything from the controller down through the service, the
-retrieval it includes, and every repository is REAL code. The learner profile, the curriculum
-corpus and the saved activity all live in FakeSupabase; the embedder and the completion model are
-the one faked provider.
+retrieval it includes, the graph and both agents, and every repository is REAL code. The learner
+profile, the curriculum corpus and the saved activity all live in FakeSupabase; the embedder, the
+writer and the reviewer are the one faked provider.
 
-NOTE ON THE DIAGRAM: the UC3 sequence diagram routes generation through ActivityGraph ->
-GenerativeAgent -> ValidativeAgent with a validate/retry loop. The CODE does not — generate()
-calls llm.complete() directly with inline guardrails (agents.py is a stub). These tests follow the
-code, so the call graph above has no agent lifelines. Flagged for the diagram/code reconciliation.
+THE DIAGRAM AND THE CODE NOW AGREE. This file previously carried a note that the UC3 sequence
+diagram routed generation through ActivityGraph -> GenerativeAgent -> ValidativeAgent while the
+code called llm.complete() directly with agents.py stubbed. That is fixed: the loop is wired, so
+the agent lifelines above are real edges and are exercised here rather than tested in isolation.
 """
 import pytest
 
 from app.agents.agents import GenerativeAgent
 from app.gateways.llm_client import LLMApiClient
+from app.prompts.activity_prompts import VALIDATION_SYSTEM_PROMPT
 from app.services.activity_generation_service import ActivityGenerationService
 
 pytestmark = pytest.mark.integration
@@ -43,7 +46,13 @@ def _learner(**overrides):
 
 
 def _chunk(id, band="A1", *, similarity=0.70, doc_type="lesson_plan"):
-    """A curriculum_chunks row. `similarity` decides the guardrail-1 gate (MIN_SIMILARITY 0.50)."""
+    """A curriculum_chunks row. `similarity` decides the guardrail-1 gate.
+
+    The default 0.70 clears the calibrated MIN_SIMILARITY (0.67) with 0.03 to spare. Cases that
+    want a refusal pass 0.30 explicitly. Both sit well clear of the gate on purpose — seeding a
+    value near it would make these tests fail the next time the gate is re-derived for a new
+    embedder, which is a calibration change, not a regression in this call graph.
+    """
     return {
         "id": id, "band": band, "concept": "action_predicate", "stage": "practice",
         "similarity": similarity, "doc_type": doc_type,
@@ -56,15 +65,34 @@ def _chunk(id, band="A1", *, similarity=0.70, doc_type="lesson_plan"):
 # The faked LLM provider — embeddings AND completions
 # --------------------------------------------------------------------------- #
 class _FakeLLM:
-    """Stands in for BOTH LLM roles retrieval+generation need. `completion` is settable per test so
-    a case can make the model self-refuse; `complete_calls` records invocations so a guardrail test
-    can prove the LLM edge was NOT taken."""
+    """Stands in for every LLM role this call graph needs: the embedder, the WRITER and the REVIEWER.
+
+    THE FAKE DISPATCHES ON `system`. Since UC3 routes through ActivityGraph the same client is
+    called twice per attempt with two different system prompts, and one canned string cannot serve
+    both roles — handed back to the reviewer, a draft activity is unreadable as a JSON verdict,
+    which correctly fails closed and flags every activity in the suite. So: writers get
+    `completion`, reviewers get the next entry in `verdicts`.
+
+    `verdicts` is consumed in order and the last entry repeats, which is what lets a case say
+    "rejected once, then accepted" without knowing how many times the loop will ask.
+
+    `complete_calls` still records EVERY call, so the guardrail tests that assert the LLM edge was
+    never taken keep working unchanged; `draft_calls` / `review_calls` split them by role for the
+    loop tests, which care how many times each agent ran.
+    """
     embed_dim = 3
     embedding_model = "fake-embed"
 
+    DRAFT = "Rhyme Time\n\n1. Clap the onset.\n2. Blend the rime.\n3. Say the word."
+    PASS = '{"valid": true}'
+    FAIL = '{"valid": false, "notes": "step 2 uses rimes that are in none of the grounding pages"}'
+
     def __init__(self):
-        self.completion = "Rhyme Time\n\n1. Clap the onset.\n2. Blend the rime.\n3. Say the word."
+        self.completion = self.DRAFT
+        self.verdicts = [self.PASS]
         self.complete_calls = []
+        self.draft_calls = []
+        self.review_calls = []
 
     def embed_many(self, texts, is_query=False):
         # is_query mirrors the real provider contract (query vs document embeddings); the fake
@@ -74,6 +102,10 @@ class _FakeLLM:
 
     def complete(self, prompt, system=None, temperature=None, seed=None):
         self.complete_calls.append(prompt)
+        if system == VALIDATION_SYSTEM_PROMPT:
+            self.review_calls.append(prompt)
+            return self.verdicts[min(len(self.review_calls) - 1, len(self.verdicts) - 1)]
+        self.draft_calls.append(prompt)
         return self.completion
 
 
@@ -96,8 +128,9 @@ def _no_rpc(fake):
 # Level 3 — ActivityGenerationService.generate, whole backend stack real
 # --------------------------------------------------------------------------- #
 def test_generate_grounds_the_activity_and_persists_it(fake_supabase, fake_llm):
-    """IT-3.1: the happy path end to end — profile -> query -> retrieve (UC5) -> prompt -> LLM ->
-    save, with no application code mocked. Returns GENERATED and leaves a row behind."""
+    """IT-3.1: the happy path end to end — profile -> query -> retrieve (UC5) -> prompt -> graph
+    (write + review) -> save, with no application code mocked. The reviewer passes it on the first
+    attempt, so it returns VALIDATED with retry_count 0 and leaves a row behind."""
     fake = fake_supabase(seed={
         "learners": [_learner()],
         "curriculum_chunks": [_chunk("a1", "A1", similarity=0.70)],
@@ -105,13 +138,17 @@ def test_generate_grounds_the_activity_and_persists_it(fake_supabase, fake_llm):
 
     out = ActivityGenerationService().generate(LEARNER_ID, {})
 
-    assert out["status"] == "GENERATED"
+    assert out["status"] == "VALIDATED"
     assert out["content"] == fake_llm.completion         # the model's text, carried through
     assert out["learner_id"] == LEARNER_ID
     assert out["grounding"][0]["title"] == "Chunk a1"    # the retrieved chunk, summarised
+    assert out["retry_count"] == 0                       # passed review first time
     # The postcondition is a stored activity, not just a response.
     assert len(fake.store["learning_activities"]) == 1
-    assert fake.store["learning_activities"][0]["status"] == "GENERATED"
+    assert fake.store["learning_activities"][0]["status"] == "VALIDATED"
+    # Both agents ran exactly once: one draft written, one verdict returned.
+    assert len(fake_llm.draft_calls) == 1
+    assert len(fake_llm.review_calls) == 1
 
 
 def test_generate_refuses_when_the_learner_has_no_band(fake_supabase, fake_llm):
@@ -135,7 +172,7 @@ def test_generate_refuses_when_grounding_is_thin(fake_supabase, fake_llm):
     activity is refused WITHOUT spending an LLM call — and nothing is persisted."""
     fake = fake_supabase(seed={
         "learners": [_learner()],
-        "curriculum_chunks": [_chunk("a1", "A1", similarity=0.30)],  # 0.30 < 0.50 gate
+        "curriculum_chunks": [_chunk("a1", "A1", similarity=0.30)],  # well under the gate
     })
 
     out = ActivityGenerationService().generate(LEARNER_ID, {})
@@ -162,6 +199,75 @@ def test_generate_refuses_when_the_model_self_refuses(fake_supabase, fake_llm):
 
 
 # --------------------------------------------------------------------------- #
+# The validate/retry loop, through the whole service stack.
+#
+# IDs: the PM3 plan numbers these IT-3.2 and IT-3.3, but this file already assigned those to the
+# two guardrail cases above, which were written first. They CONTINUE the sequence here rather than
+# renumbering passing tests — the same convention tests/README.md used for UC2's clustering IDs.
+# The graph's own arithmetic (retry_count, feedback text, fail-closed) is unit-tested in
+# unit/test_uc3_activity_graph.py; what these add is that it survives the real service, the real
+# repositories and the real prompt builders.
+# --------------------------------------------------------------------------- #
+def test_it_3_8_a_rejected_draft_is_reprompted_and_persisted_as_validated(fake_supabase, fake_llm):
+    """IT-3.8 (plan IT-3.2/3.3): the reviewer rejects once, the writer is reprompted WITH the
+    notes, and the accepted second draft is what gets stored — with retry_count 1 on the row."""
+    fake = fake_supabase(seed={
+        "learners": [_learner()],
+        "curriculum_chunks": [_chunk("a1", "A1", similarity=0.70)],
+    })
+    fake_llm.verdicts = [_FakeLLM.FAIL, _FakeLLM.PASS]
+
+    out = ActivityGenerationService().generate(LEARNER_ID, {})
+
+    assert out["status"] == "VALIDATED"
+    assert out["retry_count"] == 1
+    assert len(fake_llm.draft_calls) == 2
+    assert "rimes that are in none of the grounding pages" in fake_llm.draft_calls[1]
+    row = fake.store["learning_activities"][0]
+    assert row["status"] == "VALIDATED"
+    assert row["retry_count"] == 1
+    # One row, not one per attempt — a rejected draft is not an activity.
+    assert len(fake.store["learning_activities"]) == 1
+
+
+def test_it_3_9_an_unfixable_draft_is_stored_flagged_for_a_therapist(fake_supabase, fake_llm):
+    """IT-3.9 (plan IT-3.3): the reviewer never accepts. The activity is still SAVED — alt flow 6b
+    surfaces the best attempt rather than discarding the work — but marked FLAGGED, with the
+    reason the reviewer gave, so the therapist knows what to look at."""
+    fake = fake_supabase(seed={
+        "learners": [_learner()],
+        "curriculum_chunks": [_chunk("a1", "A1", similarity=0.70)],
+    })
+    fake_llm.verdicts = [_FakeLLM.FAIL]          # rejects every time
+
+    out = ActivityGenerationService().generate(LEARNER_ID, {})
+
+    assert out["status"] == "FLAGGED"
+    assert out["retry_count"] == 2               # ActivityGraph's default max_retries
+    assert "rimes that are in none of the grounding pages" in out["review_notes"]
+    row = fake.store["learning_activities"][0]
+    assert row["status"] == "FLAGGED"
+    assert row["retry_count"] == 2
+
+
+def test_it_3_10_a_flagged_activity_reaches_the_dashboards_pending_review_count(
+        fake_supabase, fake_llm):
+    """IT-3.10: the point of persisting FLAGGED. `routers/dashboard.py` counts
+    learning_activities with status FLAGGED for its Pending Review tile — a counter that could
+    only ever read 0 while every row was written as GENERATED."""
+    fake = fake_supabase(seed={
+        "learners": [_learner()],
+        "curriculum_chunks": [_chunk("a1", "A1", similarity=0.70)],
+    })
+    fake_llm.verdicts = [_FakeLLM.FAIL]
+
+    ActivityGenerationService().generate(LEARNER_ID, {})
+
+    flagged = [a for a in fake.store["learning_activities"] if a["status"] == "FLAGGED"]
+    assert len(flagged) == 1
+
+
+# --------------------------------------------------------------------------- #
 # Level 4 — ActivityController added, through the HTTP boundary
 # --------------------------------------------------------------------------- #
 def test_generate_route_returns_a_generated_activity(client, auth_ok, fake_supabase, fake_llm):
@@ -175,7 +281,7 @@ def test_generate_route_returns_a_generated_activity(client, auth_ok, fake_supab
     resp = client.post(f"/activities/{LEARNER_ID}/generate", json={})
 
     assert resp.status_code == 200
-    assert resp.json()["status"] == "GENERATED"
+    assert resp.json()["status"] == "VALIDATED"
     assert len(fake.store["learning_activities"]) == 1
 
 
@@ -195,18 +301,19 @@ def test_generate_route_surfaces_a_refusal_with_200(client, auth_ok, fake_supaba
 
 
 # --------------------------------------------------------------------------- #
-# GenerativeAgent — the diagram's generation lifeline, tested IN ISOLATION.
+# GenerativeAgent over the REAL client seam.
 #
-# IMPORTANT: this is NOT on the UC3 call path. ActivityGenerationService.generate() calls
-# llm.complete() directly; GenerativeAgent is only referenced by ActivityGraph, which nothing in
-# the app reaches. So these tests prove the agent's OWN behaviour (it exists on the sequence
-# diagram) — they do NOT prove UC3 routes through it, because in code it does not. This is the
-# diagram-vs-code divergence flagged in the module docstring; ValidativeAgent (a stub) and
-# ActivityGraph (a LangGraph placeholder) are deliberately left untested until they are wired in.
+# This used to carry a warning that the agent was not on the UC3 call path — that
+# ActivityGenerationService called llm.complete() directly and nothing reached ActivityGraph. It
+# is now reached on every generation, and the cases above exercise it through the service. What
+# is left here is the narrower claim the others cannot make: that the agent works against the
+# real LLMApiClient singleton (with only its provider swapped) rather than an injected double.
+# Its own logic — empty completions, transport failures — is unit-tested in
+# unit/test_uc3_activity_graph.py.
 # --------------------------------------------------------------------------- #
 def test_generative_agent_wraps_the_llm_completion(fake_llm):
-    """IT-3.7 (agent, isolated): real GenerativeAgent over the faked LLM. It sends the prompt to
-    the model and wraps the completion as a GENERATED activity dict."""
+    """IT-3.7: real GenerativeAgent over the real LLMApiClient (faked provider only). It sends the
+    prompt to the model and wraps the completion as a GENERATED draft."""
     fake_llm.completion = "Rhyme Time\n\n1. Clap the onset."
     agent = GenerativeAgent(LLMApiClient())
 

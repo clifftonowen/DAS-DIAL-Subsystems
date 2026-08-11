@@ -5,9 +5,14 @@
 
 import ActivityContent from "./ActivityContent";
 
+// UC3's AUTOMATED verdict, which is not the therapist's. The ValidativeAgent checked the draft
+// against the DAS framework and the curriculum it was grounded in; a human has still approved
+// nothing at this point — that decision is UC4's, lives on `reviews.approval_status`, and renders
+// separately in ReviewSection. These read "Validated"/"Flagged", never "Approved", so the two
+// claims stay distinguishable on screen the way they are in the schema.
 const STATUS_LABEL = {
-  VALIDATED: "Approved",
-  FLAGGED: "Not approved",
+  VALIDATED: "Validated",
+  FLAGGED: "Flagged for review",
   GENERATED: "Not yet reviewed",
 };
 

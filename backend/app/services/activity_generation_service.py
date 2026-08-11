@@ -1,13 +1,20 @@
 """ActivityGenerationService - Subsystem 3 orchestration.
 
-Curriculum-grounded RAG, the same flow `scripts.generate_activity` runs from the CLI:
+Curriculum-grounded RAG feeding a generate/validate loop:
 
     learner's DIAL marks -> retrieval query -> curriculum_chunks (hybrid RRF)
-      -> similarity gate -> guardrailed prompt -> LLM -> learning_activities row
+      -> similarity gate -> guardrailed prompt
+      -> ActivityGraph [write -> review -> reprompt with notes]
+      -> learning_activities row (VALIDATED or FLAGGED)
 
 The learner's profile IS the input. The caller passes an id, never scores, so the
 query is always derived server-side from the stored profile.
+
+NOTE: `scripts.generate_activity` still runs the pre-loop single-shot flow for ad-hoc CLI use.
+It shares the prompts and the gate but not the reviewer, so its output is a draft — nothing it
+prints has been validated, and it writes no row.
 """
+from app.agents.activity_graph import ActivityGraph
 from app.ingestion.dial_features import (
     FEATURE_LABELS, PLOT_FEATURES, UNBANDED, normalised_score,
 )
@@ -15,7 +22,6 @@ from app.repositories.learner_repository import LearnerRepository
 from app.repositories.activity_repository import ActivityRepository
 from app.repositories.curriculum_repository import CurriculumRepository
 from app.services.curriculum_retrieval_service import CurriculumRetrievalService
-from app.gateways.llm_client import LLMApiClient
 from app.prompts.activity_prompts import (
     INSUFFICIENT_CONTEXT, MIN_SIMILARITY, SYSTEM_PROMPT,
     build_activity_prompt, model_refused, top_similarity,
@@ -32,7 +38,9 @@ class ActivityGenerationService:
         self.activities = ActivityRepository()
         self.curriculum = CurriculumRetrievalService()
         self.chunks = CurriculumRepository()   # corpus counts, for honest refusal reasons only
-        self.llm = LLMApiClient()
+        # The ONLY LLM edge in UC3. The service no longer holds a client of its own: generation
+        # and review both go through the graph, so there is one place a model can be called from.
+        self.graph = ActivityGraph()           # the generate -> validate -> reprompt loop
 
     # ── band scope ────────────────────────────────────────────────────────
     @staticmethod
@@ -136,11 +144,19 @@ class ActivityGenerationService:
         # asked for — otherwise the prompt could name a band the grounding does not come from.
         echoed = {**self._request_params(params), "band": band_group}
         prompt = build_activity_prompt(chunks, echoed, profile)
-        text = self.llm.complete(prompt, system=SYSTEM_PROMPT)
+
+        # The generate -> validate -> reprompt loop (UC3 steps 6, 6a, 6b). Replaces a bare
+        # llm.complete(): the draft is now reviewed against the DAS framework and the same
+        # grounding it was built from, and is reprompted with the reviewer's notes until it
+        # passes or the retries run out.
+        result = self.graph.run(prompt, system=SYSTEM_PROMPT, chunks=chunks,
+                                params=echoed, profile=profile)
+        text = result["content"]
 
         # Guardrail 2 — the model can still self-refuse past the similarity gate
-        # (an off-topic request whose generic tokens sneak over the threshold).
-        if model_refused(text):
+        # (an off-topic request whose generic tokens sneak over the threshold). The graph
+        # short-circuits on this rather than spending retries reviewing a refusal.
+        if result["refused"] or model_refused(text):
             return self._refusal(learner_id, query, chunks, best,
                                  band_group=band_group, model_text=text)
 
@@ -155,18 +171,25 @@ class ActivityGenerationService:
             "content": {"text": text, "query": query, "grounding": grounding},
             "literacy_objective": params.get("literacy_objective", ""),
             "level": params.get("level") or params.get("band") or "",
-            "status": "GENERATED",
+            # VALIDATED or FLAGGED — the reviewer's verdict, not a placeholder. `retry_count`
+            # rides along so "validated on the third attempt" stays answerable from the row.
+            "status": result["status"],
+            "retry_count": result["retry_count"],
             # Kept alongside the richer copy above: the shared PDF renders it (pdf_renderer).
             "grounded_on": [self._chunk_label(c) for c in chunks],
         }
         self.activities.save(activity)
 
         return {
-            "status": "GENERATED",
+            "status": result["status"],
             "content": text,
             "query": query,
             "grounding": grounding,
             "learner_id": profile["id"] if profile else None,
+            "retry_count": result["retry_count"],
+            # Why it was flagged. The page shows this next to a FLAGGED activity so the therapist
+            # knows what the reviewer objected to instead of guessing; empty when it validated.
+            "review_notes": result["notes"] if result["status"] == "FLAGGED" else "",
         }
 
     def list_activities(self, learner_id: str) -> list[dict]:

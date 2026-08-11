@@ -18,6 +18,7 @@ import os
 import socket
 import threading
 import time
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -136,15 +137,27 @@ def uc4_activity(supabase_env):
     The activity is newer than any seeded row, so LearnerDetailPage selects it
     as the learner's latest activity. Deleting it also deletes its reviews via
     the reviews.activity_id ON DELETE CASCADE foreign key.
+
+    THE CONTENT CARRIES A UNIQUE MARKER, exposed to the test as `activity["marker"]`.
+    "Newest wins" holds only while this run is the sole writer, and it has already
+    failed in CI: two runs of the same commit overlapped, each inserted an activity
+    for TEST_LEARNER_ID, and each browser could load the other's row — so UC4's
+    delete-then-expect-a-rejected-write test deleted an activity the page was not
+    showing and waited 20s for an error that was never coming. Serialising the CI
+    jobs closes that window (see the concurrency group in .github/workflows/tests.yml),
+    but a test that ASSUMES its own row is on screen still fails unreadably when the
+    assumption breaks. Waiting for this marker turns "some other writer got here
+    first" into an immediate, named failure instead of a bare TimeoutException.
     """
     _require_env("TEST_LEARNER_ID")
     from supabase import create_client
 
     learner_id = os.environ["TEST_LEARNER_ID"]
+    marker = f"UC4 fixture activity {uuid.uuid4().hex}"
     sb = create_client(supabase_env["url"], supabase_env["key"])
     rows = sb.table("learning_activities").insert({
         "learner_id": learner_id,
-        "content": {"text": "UC4 temporary activity for automated review testing."},
+        "content": {"text": marker},
         "literacy_objective": "UC4 review test",
         "level": "A2",
         "status": "GENERATED",
@@ -153,7 +166,7 @@ def uc4_activity(supabase_env):
     if not rows:
         pytest.fail("could not create the temporary UC4 activity")
 
-    activity = rows[0]
+    activity = {**rows[0], "marker": marker}
     yield activity
 
     try:

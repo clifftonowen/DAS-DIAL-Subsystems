@@ -1,9 +1,28 @@
 # Frontend integration tests (Jest + MSW)
 
-**Status: implemented.** `AuthView.uc6.integration.test.jsx` and
-`AuthView.uc8.integration.test.jsx` are real tests (UC6 IT-6.9/6.10, UC8 IT-8.8/8.9).
-`LearnersPage.integration.test.jsx` is still `test.todo` placeholders — the MSW plumbing
-they need is now in place, so filling them in is just writing bodies.
+**Status: implemented**, and running in CI as its own `frontend-integration` job
+(`npm run test:integration`).
+
+| File | Covers |
+|---|---|
+| `AuthView.uc6.integration.test.jsx` | UC6 log in — IT-6.9, IT-6.10 |
+| `AuthView.uc8.integration.test.jsx` | UC8 sign up — IT-8.8, IT-8.9 |
+| `UC4Review.integration.test.jsx` | UC4 review + approval — IT-4.6, IT-4.7 |
+| `LearnersPage.integration.test.jsx` | UC9 list, search, navigation, error, caseload toggle |
+| `LearnerDetailPage.uc3.integration.test.jsx` | UC3 generate — IT-3.11 to IT-3.14 |
+| `ShareWindow.uc7.integration.test.jsx` | UC7 share — IT-7.12 to IT-7.15 |
+
+**Two live bugs this tier has already caught**, both invisible to the unit tests because those
+mock `lib/api.js` and so cannot see what crosses the wire:
+
+- `LearnerDetailPage` gated its activity re-fetch on `status === "GENERATED"`, which the backend
+  stopped sending when UC3 gained its validate loop. A successful generation rendered nothing.
+- `api.js` threw a bare `Error` with no `status`, so `ShareWindow`'s "is this retriable?" check
+  was always true and its terminal-failure branch was unreachable.
+
+Both are the same shape: a **contract between the client and the server** that no other tier
+looks at. That is what this tier is for — prefer adding cases here that assert request shaping
+and response handling, not rendering detail a unit test covers more cheaply.
 
 ## What these are
 
@@ -100,5 +119,15 @@ Three things in `jest.config.cjs` exist for MSW; changing them will break these 
 
 ## Running
 
-These live under `src/`, so `npm test` already discovers them. Run just this tier with
-`npx jest integration`.
+These live under `src/`, so `npm test` runs them alongside the unit tier. To run the tiers
+separately — which is how CI runs them, as two jobs:
+
+```bash
+npm run test:integration    # this tier only  (jest --testPathPattern __integration__)
+npm run test:unit           # everything else (jest --testPathIgnorePatterns … __integration__)
+```
+
+The two partition `npm test` exactly: a new file under `__integration__/` joins the integration
+job, anything else joins the unit job. **Run this tier on its own before pushing.** Both bugs
+listed above were found that way — a state-leak between tests can hide inside the full run's
+ordering and only show up when the tier runs alone, which is the order CI uses.

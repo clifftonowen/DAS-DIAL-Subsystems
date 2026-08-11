@@ -168,9 +168,14 @@ the top two run against a dedicated Supabase **test** project (see below).
 | **E2E** | one full-stack flow per use case, real DB + real JWT | `pytest` + real Supabase | `backend/tests/e2e` |
 | **System** | real UI in a real browser per use case | `pytest` + **Selenium** (headless Chrome) | `backend/tests/system` |
 
-Two more frontend tiers are **scaffolded** (stubs — fill in as features grow): frontend
-**integration** (Jest + MSW) in `frontend/src/views/__integration__/`, and frontend **e2e**
-(Playwright) in `frontend/e2e/`. See each folder's README.
+Two more frontend tiers are **implemented and in CI**: frontend **integration** (Jest + MSW,
+`frontend/src/views/__integration__/`, the `frontend-integration` job) and frontend **e2e**
+(Playwright, `frontend/e2e/`, the `frontend-e2e` job). See each folder's README.
+
+The frontend integration tier is where a **client/server contract** breaks get caught: the view
+and `lib/api.js` are real and only the network is replaced, so it sees request shaping and
+response handling that a unit test — which mocks `lib/api.js` — cannot. It has already caught two
+such bugs; both are described in that folder's README.
 
 ### Install
 ```bash
@@ -202,9 +207,19 @@ pytest -m system          # from backend/
 ```
 
 ### CI
-`.github/workflows/tests.yml` runs all five jobs on every push/PR. Unit, integration and
-frontend jobs run with no secrets; **e2e** and **system** read the repo Secrets listed at the
-top of that file (they self-skip and stay green until you configure them).
+`.github/workflows/tests.yml` runs all seven jobs on **pull requests and pushes to `main`**. The
+four hermetic jobs (`backend-unit`, `backend-integration`, `frontend-unit`,
+`frontend-integration`) need no secrets; **`backend-e2e`**, **`system`** and **`frontend-e2e`** read the
+repo Secrets listed at the top of that file, and self-skip — staying green — until you configure
+them. Read the skip list before quoting a green run as evidence.
+
+Two things about that trigger are deliberate, and both exist because CI broke without them:
+
+- **`push` is scoped to `main`.** A bare `push:` ran a second, identical workflow for every push
+  to a branch that already had a PR open.
+- **The three secret-backed jobs share a `concurrency` group.** They mutate one Supabase test
+  project and one `TEST_LEARNER_ID`, so two overlapping runs interleave their fixtures — which is
+  exactly how a UC4 system test once failed while the same commit passed on the run beside it.
 
 **How to add a new test** — backend levels (unit/integration/e2e/system) are in
 [`backend/tests/README.md`](backend/tests/README.md); frontend component (UI) tests are in

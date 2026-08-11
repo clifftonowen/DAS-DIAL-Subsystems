@@ -42,12 +42,19 @@ export default function ProfileMenu({ session }) {
             </span>
             <span className="text-sm break-all text-brand-fg">{email}</span>
           </div>
-          <span
+          {/* A REAL <button>, not a clickable <span>. Sign out is an action, and a span with an
+              onClick is unreachable by keyboard (never in the tab order), cannot be fired with
+              Enter or Space, and is announced to a screen reader as text rather than a control.
+              Every test tier missed it because they all match on TEXT — getByText here, and
+              `//*[normalize-space()='Sign out']` in the Selenium helpers — so nothing asserted
+              the role. The Playwright spec asks for the button role, which is what surfaced it. */}
+          <button
+            type="button"
             onClick={() => supabase.auth.signOut()}
             className="mt-3 block cursor-pointer text-sm text-brand-fg-muted hover:text-brand-fg"
           >
             Sign out
-          </span>
+          </button>
         </div>
       )}
     </div>

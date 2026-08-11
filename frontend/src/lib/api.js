@@ -15,7 +15,16 @@ export async function api(path, options = {}) {
   // thrown Error — the UI has no other way to show why a request failed. The
   // catch covers empty bodies (e.g. 204 from /auth/logout).
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(errorMessage(res, data));
+  if (!res.ok) {
+    // THE STATUS RIDES ON THE ERROR. Callers have to tell "try again" apart from "this will
+    // never work", and the message alone cannot carry that — ShareWindow decides whether to
+    // offer Retry from exactly this field (a 502 email failure is worth retrying, a 422 export
+    // failure never will be). It threw a bare Error before, so `err.status` was undefined,
+    // every failure looked retriable, and the terminal branch was unreachable code.
+    const err = new Error(errorMessage(res, data));
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -57,9 +66,14 @@ export const generateProfile = (learnerId) => api(`/profiles/${learnerId}`, { me
 // Curriculum-grounded generation. Takes a LEARNER id: the backend reads their four DIAL marks
 // and builds the retrieval query from the two they rank lowest on. `params` only steers it:
 // { band, concept, stage, notes, k }.
-// Resolves to { status: "GENERATED" | "INSUFFICIENT_CONTEXT", content, query,
+// Resolves to { status: "VALIDATED" | "FLAGGED" | "INSUFFICIENT_CONTEXT", content, query,
 //               grounding: [{ title, source, page, concept, stage, similarity }],
-//               learner_id, reason? }
+//               learner_id, retry_count, reason?, review_notes? }
+//
+// VALIDATED / FLAGGED are UC3's generate->validate loop reporting whether the ValidativeAgent
+// passed the draft within its retry budget; both mean a row WAS written. INSUFFICIENT_CONTEXT is
+// the only status that means nothing was persisted. "GENERATED" is no longer sent — it survives
+// only as the column default for rows written before the loop existed.
 export const generateActivity = (learnerId, params = {}) =>
   api(`/activities/${learnerId}/generate`, { method: "POST", body: JSON.stringify(params) });
 

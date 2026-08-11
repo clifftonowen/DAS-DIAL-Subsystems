@@ -1,7 +1,8 @@
 """Request/response DTOs for the API layer."""
 from typing import Literal, Optional
 from pydantic import BaseModel, EmailStr, field_validator
-from app.ingestion.dial_features import NORMALISATION_CEILINGS
+from app.ingestion.dial_features import FEATURE_LABELS, NORMALISATION_CEILINGS
+from app.ingestion.semesters import SEMESTER_RE
 
 MetricType = Literal["writing", "phonics", "word_reading", "word_spelling"]
 
@@ -86,6 +87,13 @@ class TaskResult(BaseModel):
 
 
 class AssessmentPreview(BaseModel):
+    """Returned by POST /assessments/preview. The frontend renders this as a review card; the
+    therapist confirms before anything is saved.
+
+    The four DIAL marks are None here, always: the parser does not read them out of the report
+    (see assessment_parser). They exist on this model so the preview and the confirm request have
+    one shape, and the therapist types them in.
+    """
     learner_id: str
     assessment_date: str
     tasks: list[TaskResult] = []
@@ -95,12 +103,15 @@ class AssessmentPreview(BaseModel):
     risk_score: float = 0.0
     task_results: dict = {}
     notes: str = ""
-    writing_score: float = 0.0
-    phonics_score: float = 0.0
-    word_reading_score: float = 0.0
-    word_spelling_score: float = 0.0
+    writing_score: float | None = None
+    phonics_score: float | None = None
+    word_reading_score: float | None = None
+    word_spelling_score: float | None = None
 
 
+# Request field -> the DIAL feature (and therefore the learner_sittings column) it carries.
+# Note `word_reading_score` -> `word_reading_accuracy`: the names differ, so anything mapping
+# between the upload payload and a sitting row must go through here rather than guess.
 _METRIC_TO_FEATURE = {
     "writing_score": "writing",
     "phonics_score": "phonics",
@@ -117,17 +128,57 @@ class AssessmentConfirmRequest(BaseModel):
     strengths: list[str] = []
     weaknesses: list[str] = []
     confidence_score: float = 0.0
-    writing_score: float = 0.0
-    phonics_score: float = 0.0
-    word_reading_score: float = 0.0
-    word_spelling_score: float = 0.0
+    # The semester this assessment belongs to, e.g. '2026 Sem 1'. REQUIRED, because it is half of
+    # `learner_sittings`' natural key (learner_id, semester) and the sort key that decides which
+    # sitting is "latest" — there is no sensible default, and a wrong one silently misfiles the
+    # marks. Validated by shape rather than against the list of semesters already on record, so
+    # the first upload of a new semester is never blocked.
+    semester: str
+    # The paper these marks were earned against. Carried on the sitting because the rubric moves
+    # between bands — phonics is out of 30 in A2 and 46 in A3 — so a mark without its band cannot
+    # be compared with anything. `band_group` is also what scopes UC3's retrieval and what
+    # percentiles rank within, so a sitting without one is much less useful than it looks.
+    band: str | None = None
+    band_group: str | None = None
+    writing_score: float | None = None
+    phonics_score: float | None = None
+    word_reading_score: float | None = None
+    word_spelling_score: float | None = None
+
+    @field_validator("semester")
+    @classmethod
+    def semester_is_well_formed(cls, value: str) -> str:
+        """'<year> Sem <1|2>' — the shape every ordering in the system depends on.
+
+        `learner_sittings.semester` is plain text with no database constraint, and both
+        `latest_for_learner` and the workbook's reduction sort it AS TEXT ('2022 Sem 2' <
+        '2023 Sem 1'). That only holds while the shape is exact: '2026 Sem 10' or 'Sem 1 2026'
+        would sort somewhere arbitrary, so the sitting would either never be found as the latest
+        or wrongly be. Nothing downstream would error — it would just be quietly wrong, which is
+        why this is rejected at the boundary.
+        """
+        value = value.strip()
+        if not SEMESTER_RE.fullmatch(value):
+            raise ValueError(
+                f"semester must look like '2026 Sem 1' (got {value!r})"
+            )
+        return value
 
     @field_validator(
         "writing_score", "phonics_score", "word_reading_score", "word_spelling_score"
     )
     @classmethod
-    def score_within_rubric(cls, value: float, info) -> float:
-        """0 <= score <= ceiling, matching the frontend's displayed valid range."""
+    def score_within_rubric(cls, value: float | None, info) -> float | None:
+        """0 <= score <= ceiling, matching the frontend's displayed valid range.
+
+        NOT ASSESSED IS NOT ZERO, so None passes straight through. Writing is never administered
+        to band A at all, and a 0 there would be a real mark of zero: it would rank as the
+        learner's weakest skill, drive the retrieval query, and produce a writing activity for a
+        learner who has never sat the paper. `normalised_score` returns None for None, and the
+        radar omits the axis rather than plotting it at the origin.
+        """
+        if value is None:
+            return None
         max_score = NORMALISATION_CEILINGS[_METRIC_TO_FEATURE[info.field_name]]
         if not (0 <= value <= max_score):
             raise ValueError(
@@ -135,6 +186,34 @@ class AssessmentConfirmRequest(BaseModel):
                 f"(got {value:g})"
             )
         return value
+
+
+class AssessmentMetric(BaseModel):
+    """One row of the upload form's score entry, served by GET /assessments/metrics.
+
+    SERVED RATHER THAN HARDCODED IN THE UI, for the same reason `DialMetric.max` is: a second copy
+    of the rubric in the frontend is a second thing to get wrong when a paper changes, and this
+    one has to agree with the confirm validator exactly or the form accepts marks the API rejects.
+
+    `max` is the NORMALISATION ceiling (phonics 50, writing 30), not the exact rubric maximum
+    (46, 24) that DialMetric.max carries. The two are deliberately different numbers — see
+    dial_features — and this is the one the validator enforces.
+    """
+    key: str            # the confirm-request field name, e.g. 'phonics_score'
+    label: str          # 'Phonics'
+    max: float          # inclusive upper bound the form should enforce
+
+
+def assessment_metrics() -> list[AssessmentMetric]:
+    """The four metrics in the order the form should offer them."""
+    return [
+        AssessmentMetric(
+            key=key,
+            label=FEATURE_LABELS[feature],
+            max=NORMALISATION_CEILINGS[feature],
+        )
+        for key, feature in _METRIC_TO_FEATURE.items()
+    ]
 
 
 # ── Cohort clustering — GET /dashboard/clusters (UC2) ────────────────────────

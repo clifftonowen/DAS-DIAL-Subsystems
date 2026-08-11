@@ -88,7 +88,16 @@ create table if not exists assessment_records (
   task_results jsonb default '{}',
   strengths text[] default '{}',
   weaknesses text[] default '{}',
-  confidence_score float default 0
+  confidence_score float default 0,
+  -- The four DIAL marks as submitted. NULLABLE AND NULL BY DEFAULT, never 0: writing is not
+  -- administered to band A at all, and a zero there is a real mark that would rank as the
+  -- learner's weakest skill. The same marks are also written to `learner_sittings`, which is
+  -- the grain the profile page and Generate Profile read; this table keeps the report as filed.
+  -- Added to an existing project by migrations/2026-08-11_uc1_add_assessment_metric.sql.
+  writing_score float,
+  phonics_score float,
+  word_reading_score float,
+  word_spelling_score float
 );
 
 -- One row per learner per SEMESTER — the score history behind the profile page's line chart.

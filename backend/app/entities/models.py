@@ -44,7 +44,10 @@ class AssessmentRecord(BaseModel):
     strengths: list[str] = []
     weaknesses: list[str] = []
     confidence_score: float = 0.0
-
+    writing_score: float = 0.0
+    phonics_score: float = 0.0
+    word_reading_score: float = 0.0
+    word_spelling_score: float = 0.0
 
 class LearnerProfile(BaseModel):
     id: UUID = Field(default_factory=uuid4)

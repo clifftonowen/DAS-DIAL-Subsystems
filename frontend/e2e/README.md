@@ -52,6 +52,7 @@ Useful while writing specs: `npx playwright test --headed`, `--debug`, `--ui`, a
 The `frontend-e2e` job in `.github/workflows/tests.yml` starts the backend, builds and serves the
 frontend, installs chromium, and runs `npm run test:e2e`, uploading the HTML report on failure.
 
-It shares the `supabase-test-project` **concurrency group** with `e2e` and `system`. All three
+It shares the `supabase-test-project` **concurrency group** with `backend-e2e` and `system`, and
+runs last in the chain `backend-e2e -> system -> frontend-e2e`. All three
 mutate one Supabase project, and letting two of them run at once has already broken a CI run —
-see the note on the `e2e` job.
+see the note on the `backend-e2e` job.

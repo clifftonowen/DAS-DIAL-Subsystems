@@ -209,7 +209,7 @@ pytest -m system          # from backend/
 ### CI
 `.github/workflows/tests.yml` runs all seven jobs on **pull requests and pushes to `main`**. The
 four hermetic jobs (`backend-unit`, `backend-integration`, `frontend-unit`,
-`frontend-integration`) need no secrets; **`e2e`**, **`system`** and **`frontend-e2e`** read the
+`frontend-integration`) need no secrets; **`backend-e2e`**, **`system`** and **`frontend-e2e`** read the
 repo Secrets listed at the top of that file, and self-skip — staying green — until you configure
 them. Read the skip list before quoting a green run as evidence.
 

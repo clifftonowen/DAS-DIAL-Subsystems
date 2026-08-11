@@ -175,7 +175,7 @@ frontend (`npm run build && npm run preview -- --port 4173`) with `VITE_API_URL`
 ## Markers & CI
 
 Markers are declared in `pytest.ini` (`--strict-markers` rejects typos). CI runs each level as a
-separate job in `.github/workflows/tests.yml`; e2e/system read repo Secrets and self-skip until
+separate job in `.github/workflows/tests.yml`; backend-e2e/system read repo Secrets and self-skip until
 those are configured.
 
 ---

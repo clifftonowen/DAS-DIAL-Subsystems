@@ -30,6 +30,24 @@ test("clicking Sign out calls supabase.auth.signOut", async () => {
   supabase.auth.signOut.mockClear();
   render(<ProfileMenu session={session} />);
   await userEvent.click(screen.getByText("My Profile"));
-  await userEvent.click(screen.getByText("Sign out"));
+  // BY ROLE, NOT BY TEXT. Sign out shipped as a <span onClick>, which is unreachable by keyboard
+  // and announced as plain text — and every tier missed it, because getByText and the Selenium
+  // helpers' `//*[normalize-space()='Sign out']` both match any element. Asking for the button
+  // role is what pins it, and it costs nothing here.
+  await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+  expect(supabase.auth.signOut).toHaveBeenCalledTimes(1);
+});
+
+test("Sign out is reachable by keyboard", async () => {
+  supabase.auth.signOut.mockClear();
+  render(<ProfileMenu session={session} />);
+  await userEvent.click(screen.getByText("My Profile"));
+
+  // The half of "is it a button" that the role query alone does not prove: a real control takes
+  // focus and fires on Enter. A div with role="button" bolted on would pass the test above and
+  // still strand anyone not using a mouse.
+  await userEvent.tab();
+  expect(screen.getByRole("button", { name: "Sign out" })).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
   expect(supabase.auth.signOut).toHaveBeenCalledTimes(1);
 });

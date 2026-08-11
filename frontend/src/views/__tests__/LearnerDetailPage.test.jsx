@@ -160,14 +160,16 @@ test("shows the refusal reason and keeps the previous activity on screen", async
   api.getLearnerActivities.mockResolvedValue([activityRow()]);
   api.generateActivity.mockResolvedValue({
     status: "INSUFFICIENT_CONTEXT", content: "",
-    reason: "best similarity 0.310 is below the 0.5 gate.",
+    reason: "best similarity 0.310 is below the 0.67 gate.",
     query: "literacy activity targeting phonics 2.4/10", learner_id: LEARNER_ID, grounding: [],
   });
   renderPage();
   await generate(user);
 
   expect(await screen.findByText("Not enough curriculum grounding")).toBeInTheDocument();
-  expect(screen.getByText(/below the 0.5 gate/)).toBeInTheDocument();
+  // The page renders the backend's reason verbatim; the gate value is the backend's business,
+  // so match the shape of the sentence rather than pinning the calibrated number here.
+  expect(screen.getByText(/below the [\d.]+ gate/)).toBeInTheDocument();
   // A refusal must not destroy work the therapist may still be using.
   expect(screen.getByText(/Clap the rhyme/)).toBeInTheDocument();
 });

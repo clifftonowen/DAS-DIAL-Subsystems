@@ -167,6 +167,9 @@ create table if not exists learning_activities (
   literacy_objective text default '',
   level text default '',
   status text default 'GENERATED',       -- GENERATED / VALIDATED / FLAGGED
+  -- Regenerations the UC3 validate loop needed before settling: 0 = passed review first time,
+  -- == max_retries on a FLAGGED row. See migrations/2026-08-11_uc3_validation_retry_count.sql.
+  retry_count integer not null default 0,
   grounded_on text[] default '{}',
   created_at timestamptz default now()
 );

@@ -23,8 +23,19 @@ class Settings(BaseSettings):
     # Retrieval gate: top-chunk cosine similarity below this => refuse without calling the LLM.
     # PROVIDER-SPECIFIC, which is why it is a setting and not a constant — two people evaluating
     # two embedders need two values at once. Derive it with scripts/calibrate_gate.py; never guess.
-    # Default 0.50 is nomic-embed-text's (junk lands ~0.42, real matches 0.58+).
-    min_similarity: float = 0.50
+    #
+    # 0.67 is nomic-embed-text's CALIBRATED gate, not a guess: measured junk_max 0.66857 against
+    # real_min 0.67046 over the golden set (docs/MODEL_EVALUATION.md §4). It replaces a hand-picked
+    # 0.50 that admitted 2 of the 7 junk queries outright — junk_maths_lookalike scored 0.6686 and
+    # junk_football 0.5458, and Guardrail 2 (model self-refusal) catches only ~1 in 8, so the gate
+    # was the only thing standing between an off-topic request and a fabricated activity.
+    #
+    # THE MARGIN IS 0.0019. That is real but thin: one unlucky in-domain query scoring at the
+    # bottom of its band gets refused. Do not treat this number as settled — the experiment that
+    # would widen it is nomic WITH its task prefixes (see ollama_use_task_prefixes below), and
+    # gemini-embedding-001 already separates 21x better (window 0.041, gate 0.71) if the ranking
+    # trade-off is ever judged worth it.
+    min_similarity: float = 0.67
 
     # Gemini backend — generation and embedding are separate classes with separate models.
     gemini_api_key: str = ""

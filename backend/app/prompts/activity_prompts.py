@@ -8,6 +8,8 @@ is the retrieval gate the caller uses to short-circuit before ever reaching the 
 """
 from __future__ import annotations
 
+import json
+
 from app.core.config import settings
 from app.ingestion.dial_features import (
     FEATURE_LABELS, FEATURE_MAXIMA, PLOT_FEATURES, normalised_score,
@@ -20,8 +22,8 @@ INSUFFICIENT_CONTEXT = "INSUFFICIENT_CONTEXT"  # sentinel the model must emit wh
 # Still imported from here by everything that gates on it, but the VALUE now comes from settings,
 # because it belongs to the embedding model rather than to the prompt. Each model's band:
 #
-#   nomic-embed-text     junk ~0.42, real 0.58+   -> 0.50   (the default in config.py)
-#   gemini-embedding-001 measured with scripts/calibrate_gate.py before use
+#   nomic-embed-text     junk_max 0.6686, real_min 0.6705  -> 0.67  (the default in config.py)
+#   gemini-embedding-001 junk_max 0.6859, real_min 0.7268  -> 0.71  (wider window, worse ranking)
 #
 # Never carry one model's number over to another: the bands do not merely shift, they have
 # different widths, so a threshold that cleanly separated junk on one can sit inside the other's
@@ -132,6 +134,96 @@ def build_activity_prompt(chunks: list[dict], params: dict, profile: dict | None
         f"{_fmt_request(params, profile)}\n\n"
         "Design the learning activity now, following the system rules."
     )
+
+
+# --------------------------------------------------------------------------- #
+# Validation — the ValidativeAgent's half of the generate/validate loop (UC3 step 6)
+# --------------------------------------------------------------------------- #
+
+# The rubric the draft is judged against. Kept as data next to the generator's own rules on
+# purpose: every criterion here is the enforceable form of a promise SYSTEM_PROMPT makes, so if
+# the two drift the loop starts rejecting activities for rules the generator was never given.
+DAS_FRAMEWORK = """1. GROUNDED — every step, material, example and word list is supported by the
+   grounding activities. Anything the model supplied from its own knowledge fails this.
+2. TARGETED — the activity addresses the skills named in the request, at the learner's band.
+3. TEACHER-READY — it has a title, a stated objective, a materials list, and numbered steps a
+   therapist could run without rewriting it.
+4. SELF-CONSISTENT — no placeholder text, no "TODO", no step referring to a material or an
+   earlier step that does not exist, and it is not cut off mid-sentence."""
+
+VALIDATION_SYSTEM_PROMPT = f"""You are a reviewer for the DAS D.I.A.L literacy programme. You do
+NOT write or rewrite activities. You judge ONE draft activity against the grounding it was built
+from, and you report the verdict.
+
+Judge it against every criterion:
+
+{DAS_FRAMEWORK}
+
+Reply with a single JSON object and nothing else — no prose before it, no code fence around it:
+
+{{"valid": true}}  or  {{"valid": false, "notes": "<what to fix>"}}
+
+`notes` is fed back to the writer as the instruction for their next attempt, so make it specific
+and actionable ("step 3 introduces rhyming pairs that appear in none of the grounding activities;
+replace them with the pairs from [2]"), not a grade ("insufficiently grounded"). Omit `notes`
+when the draft passes.
+"""
+
+
+def build_validation_prompt(activity_text: str, chunks: list[dict], params: dict,
+                            profile: dict | None = None) -> str:
+    """The reviewer's user message: the same grounding the writer saw, then the draft to judge.
+
+    THE REVIEWER MUST SEE THE GROUNDING. Criterion 1 is "nothing outside the grounding", which is
+    unanswerable without it — a reviewer shown only the draft can check that it reads well and
+    nothing else, which is the failure mode the hardcoded `valid: True` stub already had. Built
+    from `format_context`/`_fmt_request`, the same helpers the generator's prompt uses, so the two
+    cannot drift into judging against a different rendering of the same chunks.
+    """
+    return (
+        "GROUNDING ACTIVITIES (the only permitted source):\n\n"
+        f"{format_context(chunks)}\n\n"
+        "========\n\n"
+        f"{_fmt_request(params, profile)}\n\n"
+        "========\n\n"
+        "DRAFT ACTIVITY TO REVIEW:\n\n"
+        f"{activity_text.strip()}\n\n"
+        "Return the JSON verdict now."
+    )
+
+
+def parse_verdict(raw: str | None) -> dict:
+    """The reviewer's reply as `{"valid": bool, "notes": str}`.
+
+    FAILS CLOSED. An unreadable verdict is not a pass — it is a review that did not happen, and
+    treating it as approval is exactly the bug the previous `return {"valid": True}` stub was.
+    A malformed reply therefore rejects the draft and says so in the notes, which costs one retry
+    and, if the model keeps producing garbage, ends as FLAGGED for a human. That is the right
+    outcome: an activity nothing successfully reviewed should reach a therapist marked as such.
+
+    Tolerant of the two things models reliably do to JSON — wrapping it in a ```json fence, and
+    padding it with a sentence either side — but not of inventing a shape.
+    """
+    if not raw or not raw.strip():
+        return {"valid": False, "notes": "The reviewer returned an empty response."}
+
+    text = raw.strip()
+    if text.startswith("```"):                       # strip a ```json … ``` fence
+        lines = [ln for ln in text.splitlines() if not ln.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+
+    start, end = text.find("{"), text.rfind("}")     # ignore prose either side of the object
+    if start != -1 and end > start:
+        try:
+            parsed = json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict) and isinstance(parsed.get("valid"), bool):
+            notes = parsed.get("notes") or ""
+            return {"valid": parsed["valid"], "notes": str(notes).strip()}
+
+    return {"valid": False,
+            "notes": f"The reviewer's verdict could not be read as JSON: {raw.strip()[:200]}"}
 
 
 def model_refused(text: str | None) -> bool:

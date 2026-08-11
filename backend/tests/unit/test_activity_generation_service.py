@@ -192,9 +192,13 @@ def test_the_prompt_omits_a_metric_with_no_mark(build):
 # ── what a successful generation PERSISTS ─────────────────────────────────────
 @pytest.fixture
 def service(monkeypatch):
-    """The real service with its four collaborators stubbed, so `generate` runs end to end
-    without Supabase, an embedder or an LLM. Returns (svc, saved) where `saved` collects the
-    rows handed to ActivityRepository.save."""
+    """The real service with its collaborators stubbed, so `generate` runs end to end without
+    Supabase, an embedder or an LLM. Returns (svc, saved) where `saved` collects the rows handed
+    to ActivityRepository.save.
+
+    `graph` is stubbed rather than `llm` now that generation runs through ActivityGraph: these
+    cases are about what a SUCCESSFUL generation persists, and driving a real two-call
+    generate/validate loop to find out would test the loop instead. The loop has its own tests."""
     svc = ActivityGenerationService.__new__(ActivityGenerationService)
     saved: list[dict] = []
 
@@ -202,11 +206,20 @@ def service(monkeypatch):
         def save(self, row):
             saved.append(row)
 
+    class _Graph:
+        """A graph that validates on the first attempt — the ordinary success path."""
+        @staticmethod
+        def run(prompt, **kwargs):
+            return {"content": "Title: Rhyme Time", "status": "VALIDATED",
+                    "retry_count": 0, "notes": "", "best_attempt": "Title: Rhyme Time",
+                    "refused": False}
+
     svc.learners = type("_L", (), {"find_by_id": staticmethod(lambda _id: learner())})()
     svc.activities = _Activities()
     svc.curriculum = type("_C", (), {"retrieve": staticmethod(lambda *a, **k: [CHUNK])})()
     svc.chunks = None                       # refusal path only; unused on a success
     svc.llm = type("_M", (), {"complete": staticmethod(lambda *a, **k: "Title: Rhyme Time")})()
+    svc.graph = _Graph()
     return svc, saved
 
 
@@ -225,7 +238,7 @@ def test_the_saved_row_carries_the_same_grounding_the_response_returns(service):
 
     out = svc.generate("11111111-1111-1111-1111-111111111111", {})
 
-    assert out["status"] == "GENERATED"
+    assert out["status"] == "VALIDATED"
     assert saved[0]["content"]["grounding"] == out["grounding"]
     assert saved[0]["content"]["grounding"][0]["similarity"] == 0.71
     assert saved[0]["content"]["grounding"][0]["title"] == "Rhyme Time"

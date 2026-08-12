@@ -176,6 +176,24 @@ def test_ut_1_2b_confirm_returns_500_when_the_database_refuses(client, auth_ok, 
     assert response.status_code == 500
 
 
+# Both endpoints sit behind `current_therapist`. Kept from the `uploadData` branch, which wrote
+# them independently — an assessment is clinical data, and `confirm` also writes a learner's
+# marks, so an unauthenticated caller could rewrite a learner they cannot even see.
+# No `auth_ok` fixture here on purpose: that override is what these two tests exist to remove.
+def test_preview_requires_authentication(client):
+    resp = client.post(
+        "/assessments/preview",
+        data={"learner_id": LEARNER_ID},
+        files={"file": ("report.pdf", b"%PDF-1.4", "application/pdf")},
+    )
+    assert resp.status_code in (401, 403)
+
+
+def test_confirm_requires_authentication(client):
+    resp = client.post("/assessments/confirm", json=confirm_payload().model_dump(mode="json"))
+    assert resp.status_code in (401, 403)
+
+
 # UT: 1.3-1.4
 # AssessmentService.parse_preview() + confirm_and_save()
 # --------------------------------------------------------------------------- #
@@ -415,6 +433,42 @@ def test_ut_1_9c_a_failed_sitting_write_never_writes_a_record():
         svc.confirm_and_save(confirm_payload())
 
     svc.assessments.save.assert_not_called()
+
+
+def test_ut_1_9e_the_record_is_json_safe_before_it_reaches_the_repository():
+    """UT-1.9: `assessment_date` goes to PostgREST as a string, not a `date` object.
+
+    Kept from the `uploadData` branch. The DTO may hold a real date, but the driver serialises
+    the payload to JSON — an unconverted `date` raises at the boundary, on the second of the two
+    writes, leaving a sitting already committed with no record beside it.
+    """
+    svc = make_service()
+
+    out = svc.confirm_and_save(confirm_payload())
+
+    assert out["status"] == "success"
+    saved = svc.assessments.save.call_args.args[0]
+    assert saved["learner_id"] == str(LEARNER_ID)
+    assert isinstance(saved["assessment_date"], str)
+
+
+def test_ut_1_9f_a_failed_record_write_is_translated_into_storage_error():
+    """UT-1.6 (service half): the repository's raw driver failure becomes StorageError HERE.
+
+    Kept from the `uploadData` branch, which pinned the record write; UT-1.9c pins the sitting
+    write, which did not exist when that branch was cut. The repository deliberately does not
+    catch (UT-1.6), so this is the only layer that turns a driver error into a type the router
+    can map to a 500.
+    """
+    svc = make_service()
+    svc.assessments.save.side_effect = ConnectionError("connection refused")
+
+    with pytest.raises(StorageError, match="connection refused"):
+        svc.confirm_and_save(confirm_payload())
+
+    # The sitting was written first and stays — deliberately. A retry upserts the same
+    # (learner_id, semester) row rather than appending a second one. See UT-1.9b.
+    svc.sittings.upsert_many.assert_called_once()
 
 
 def test_ut_1_9d_band_falls_back_to_the_learners_own_when_not_supplied():

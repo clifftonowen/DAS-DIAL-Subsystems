@@ -141,6 +141,17 @@ def open_upload_form(driver, base_url, timeout=30):
         lambda d: "0–…" not in d.find_element(By.ID, "upload-phonics_score-hint").text,
         "the served rubric never arrived — GET /assessments/metrics or /semesters failed",
     )
+    # The LEARNER list is a third async source, and a separate one: it belongs to LearnersPage,
+    # which mounts this modal on click and may still be fetching. Its options must exist before
+    # anything is submitted, or `learnerId` is empty and handleParse refuses.
+    #
+    # Do not be tempted to check the select's VALUE here. A <select> whose React value is ""
+    # matches no option, so the browser displays the first one anyway — the control reads
+    # correctly while the state behind it is empty. Count the options instead.
+    wait.until(
+        lambda d: len(d.find_elements(By.CSS_SELECTOR, "#upload-learner option")) > 0,
+        "the learner list never populated — the therapist's caseload may be empty",
+    )
     return wait
 
 
@@ -269,6 +280,10 @@ def test_st_1_2_a_corrupted_file_is_reported_and_stores_nothing(
     # The detail has to survive the API client, not arrive as "[object Object]" — FastAPI sends
     # a list-shaped detail for a 422, which is exactly what apiForm used to stringify raw.
     assert "[object Object]" not in message
+    # And it must be the PARSER's complaint, not the form's own precondition guard. That guard
+    # now writes into the same box, so a half-filled form would satisfy the assertions above
+    # while never reaching the parser at all — this test would pass for the wrong reason.
+    assert "Pick a learner" not in message
     # Never reached the preview, so there is nothing to confirm and nothing was stored.
     assert driver.find_elements(By.XPATH, CONFIRM_BUTTON) == []
 

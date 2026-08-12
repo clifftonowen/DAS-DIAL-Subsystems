@@ -61,6 +61,22 @@ export default function UploadView({ learners, onClose, onSaved }) {
     return () => { cancelled = true; };
   }, []);
 
+  // KEEP THE SELECTED LEARNER IN STEP WITH THE LIST. `useState(learners[0]?.id)` above runs once,
+  // at mount, and LearnersPage mounts this modal the moment the button is clicked — which can be
+  // before its own fetch resolves. Land in that window and `learners` is [], so `learnerId` is ""
+  // and NOTHING ever corrected it: the form rendered normally, "Parse report" enabled itself as
+  // soon as a file was attached, and clicking it hit the `!learnerId` guard in handleParse and
+  // returned silently. No request, no preview, no error — the button simply did nothing, for as
+  // long as the modal stayed open.
+  //
+  // Keeps the therapist's choice when it is still in the list, so a re-fetch (search, paging)
+  // does not yank the selection out from under them.
+  useEffect(() => {
+    setLearnerId((current) =>
+      current && learners.some((l) => l.id === current) ? current : learners[0]?.id ?? ""
+    );
+  }, [learners]);
+
   // Prefill the band from the learner being uploaded for, but leave it editable — a learner's
   // band changes between sittings, and this sitting records the paper they actually sat.
   useEffect(() => {
@@ -99,7 +115,14 @@ export default function UploadView({ learners, onClose, onSaved }) {
 
   async function handleParse(e) {
     e.preventDefault();
-    if (!file || !learnerId || !semester || hasInvalidMetric) return;
+    // SAY WHY, rather than returning silently. The button is enabled on `!file` alone, so it is
+    // reachable with no learner or no semester — and a click that does nothing at all, with no
+    // message, is indistinguishable from a broken app. This guard firing invisibly is exactly
+    // what made the browser tests time out on a preview that was never coming.
+    if (!file || !learnerId || !semester || hasInvalidMetric) {
+      setError("Pick a learner, a semester and a file before parsing.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {

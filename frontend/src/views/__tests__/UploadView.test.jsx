@@ -188,6 +188,63 @@ test("a learner with no band on record leaves it unset rather than guessing", as
   expect(await screen.findByLabelText("Band")).toHaveValue("");
 });
 
+// ── the learner list can arrive after the modal opens ─────────────────────────
+test("a learner list that arrives after mount is actually usable", async () => {
+  // THE BUG THIS PINS. LearnersPage mounts this modal the instant the button is clicked, which
+  // can be before its own fetch resolves. `useState(learners[0]?.id)` runs once, so landing in
+  // that window left learnerId "" with nothing to correct it — and handleParse's `!learnerId`
+  // guard then made "Parse report" a button that did nothing at all, silently, forever.
+  // Three of the four ST-1.x browser tests died on exactly this and reported only a timeout.
+  //
+  // ASSERT THE REQUEST, NOT THE DROPDOWN. A <select> whose React value is "" matches no option,
+  // so the browser falls back to displaying the first one — the control READS "Aisha Binti
+  // Rahman" while the state behind it is empty. An assertion on the DOM value passes with the
+  // bug fully present (verified: removing the effect does not fail it). Only the call proves it.
+  const user = userEvent.setup();
+  const { rerender } = render(
+    <UploadView learners={[]} onClose={() => {}} onSaved={() => {}} />
+  );
+  await screen.findByText(/Valid range: 0–50/);
+
+  rerender(<UploadView learners={[LEARNER]} onClose={() => {}} onSaved={() => {}} />);
+  await user.upload(screen.getByLabelText(/Assessment file/), aFile());
+  await user.click(screen.getByRole("button", { name: "Parse report" }));
+
+  await waitFor(() =>
+    expect(api.previewAssessment).toHaveBeenCalledWith("l1", expect.any(File)));
+});
+
+test("a re-fetch does not yank the therapist's chosen learner away", async () => {
+  const user = userEvent.setup();
+  const OTHER = { id: "l9", pseudonym: "Ben Tan", band: "B1" };
+  const { rerender } = render(
+    <UploadView learners={[LEARNER, OTHER]} onClose={() => {}} onSaved={() => {}} />
+  );
+
+  await user.selectOptions(screen.getByLabelText("Learner"), "l9");
+
+  // Searching or paging re-fetches and hands down a new array. The choice must survive it, or
+  // the fix above would trade a silent no-op for a silent wrong learner — the worse bug, since
+  // it writes an assessment to somebody else.
+  rerender(<UploadView learners={[OTHER, LEARNER]} onClose={() => {}} onSaved={() => {}} />);
+
+  await waitFor(() => expect(screen.getByLabelText("Learner")).toHaveValue("l9"));
+});
+
+test("parsing with no learner selected says so instead of doing nothing", async () => {
+  const user = userEvent.setup();
+  renderView({ learners: [] });
+  await screen.findByText(/Valid range: 0–50/);
+
+  await user.upload(screen.getByLabelText(/Assessment file/), aFile());
+  await user.click(screen.getByRole("button", { name: "Parse report" }));
+
+  // The button enables on a file alone, so it is reachable in this state. A click that returns
+  // silently is indistinguishable from a broken app.
+  expect(await screen.findByRole("alert")).toHaveTextContent("Pick a learner");
+  expect(api.previewAssessment).not.toHaveBeenCalled();
+});
+
 // ── the three steps and their failures ────────────────────────────────────────
 test("a parse failure is shown and the preview is never reached", async () => {
   const user = userEvent.setup();

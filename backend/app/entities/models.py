@@ -44,10 +44,13 @@ class AssessmentRecord(BaseModel):
     strengths: list[str] = []
     weaknesses: list[str] = []
     confidence_score: float = 0.0
-    writing_score: float = 0.0
-    phonics_score: float = 0.0
-    word_reading_score: float = 0.0
-    word_spelling_score: float = 0.0
+    # None means NOT ASSESSED, which is not the same as a mark of zero — writing is never
+    # administered to band A, and a 0 there would rank as the learner's weakest skill and drive
+    # UC3 to generate an activity for a paper they have never sat.
+    writing_score: float | None = None
+    phonics_score: float | None = None
+    word_reading_score: float | None = None
+    word_spelling_score: float | None = None
 
 class LearnerProfile(BaseModel):
     id: UUID = Field(default_factory=uuid4)

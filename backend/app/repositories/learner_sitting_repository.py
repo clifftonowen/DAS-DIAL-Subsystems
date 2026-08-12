@@ -63,6 +63,55 @@ class LearnerSittingRepository(BaseRepository):
         ) or []
         return rows[0] if rows else None
 
+    def distinct_semesters(self) -> list[str]:
+        """Every semester that has at least one sitting, newest first.
+
+        PostgREST has no DISTINCT, so the column is read and deduplicated here. Paged for the
+        same reason as everything else that reads this table: ~22,892 rows against a 1,000-row
+        cap that truncates silently.
+        """
+        seen: set[str] = set()
+        offset = 0
+        while True:
+            page = (
+                self.db.select("semester")
+                       .range(offset, offset + PAGE - 1)
+                       .execute().data
+            ) or []
+            seen.update(row["semester"] for row in page if row.get("semester"))
+            if len(page) < PAGE:
+                return sorted(seen, reverse=True)
+            offset += PAGE
+
+    def peer_marks(self, semester: str, band_group: str) -> list[dict]:
+        """Every sitting from the same semester and band group — the population a mark is ranked
+        against when UC1's upload computes its percentiles.
+
+        (semester, band_group) is the scope `dial_workbook.percentiles` uses for sitting-level
+        percentiles, and it has to be the same one: ranking a 2022 mark against the 2026 cohort
+        would make the profile line move as the population around the learner changes rather than
+        as the learner does.
+
+        Returns the four marks only — the ranking needs no identity, and not selecting it keeps
+        one learner's upload from reading another's pseudonym. Paged, because a band group in one
+        semester runs to a few thousand rows and PostgREST truncates at 1,000 WITHOUT erroring.
+        """
+        columns = "phonics,word_reading_accuracy,word_spelling,writing"
+        rows: list[dict] = []
+        offset = 0
+        while True:
+            page = (
+                self.db.select(columns)
+                       .eq("semester", semester)
+                       .eq("band_group", band_group)
+                       .range(offset, offset + PAGE - 1)
+                       .execute().data
+            ) or []
+            rows.extend(page)
+            if len(page) < PAGE:
+                return rows
+            offset += PAGE
+
     def upsert_many(self, rows: list[dict], batch: int = BATCH) -> int:
         """Bulk write, conflicting on (learner_id, semester).
 

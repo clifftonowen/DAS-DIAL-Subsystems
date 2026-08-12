@@ -88,10 +88,9 @@ def parse_assessment_report(file: UploadFile, learner_id: str) -> AssessmentPrev
         risk_score=risk_score,
         task_results=task_results,
         notes=notes,
-        writing_score=0.0,
-        phonics_score=0.0,
-        word_reading_score=0.0,
-        word_spelling_score=0.0,
+        # The four DIAL marks are NOT parsed out of the report — the therapist types them into
+        # the preview card. They are left None rather than 0.0 so an unedited field means "not
+        # assessed" all the way down, instead of asserting a mark of zero nobody entered.
     )
 
 

@@ -38,3 +38,6 @@ note.md
 CODEBASE_SUMMARY.md
 PM3_Test_Plan_UC6_UC8.md
 docs/
+
+#Fuzzing Corpus
+backend/fuzz/corpus/

@@ -1,0 +1,5 @@
+,gemini-3.5-flash,claude-sonnet-5
+faithfulness,0.7767,0.8312
+context precision,0.875,0.9083
+context recall,0.5667,0.5667
+refusal rate,0.125,0.125

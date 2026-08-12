@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\runner.py", line 94, in run_one
+    self.target.run(data)
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\targets\t_semesters.py", line 104, in run
+    invariant(
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\oracles.py", line 42, in invariant
+    raise OracleViolation(OracleKind.INVARIANT, message)
+fuzz.oracles.OracleViolation: option_list returned a value it would itself reject: ['9999 Sem 2', '9999 Sem 1', '2023 Sem 2', '2022 Sem 1', '10000 Sem 1']

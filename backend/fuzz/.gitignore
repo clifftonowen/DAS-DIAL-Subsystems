@@ -1,0 +1,4 @@
+# Campaign console logs. Noisy, machine-specific and reproducible from the seed.
+# The JSON summaries and the reproducing inputs beside them ARE tracked: they are the evidence.
+findings/*.log
+findings/*.err

@@ -177,6 +177,20 @@ and `lib/api.js` are real and only the network is replaced, so it sees request s
 response handling that a unit test — which mocks `lib/api.js` — cannot. It has already caught two
 such bugs; both are described in that folder's README.
 
+### Robustness testing (fuzzing)
+
+Alongside the pyramid, `backend/fuzz/` holds a **coverage-guided fuzzer** we wrote. Every test
+above uses inputs a person thought of; the fuzzer generates the ones nobody did, runs them to a
+wall-clock budget, and checks the result against five oracle kinds (crash, hang, invariant,
+roundtrip, differential). It has found eleven distinct defects so far.
+
+```bash
+cd backend
+.venv/Scripts/python -m fuzz.runner --strategy coverage --target all --seconds 300
+```
+
+`backend/fuzz/README.md` is the guide; `docs/PM_Robustness_Testing.md` reports the findings.
+
 ### Install
 ```bash
 cd backend  && pip install -r requirements.txt -r requirements-dev.txt

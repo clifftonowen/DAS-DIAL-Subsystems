@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     # would widen it is nomic WITH its task prefixes (see ollama_use_task_prefixes below), and
     # gemini-embedding-001 already separates 21x better (window 0.041, gate 0.71) if the ranking
     # trade-off is ever judged worth it.
-    min_similarity: float = 0.67
+    min_similarity: float = 0.50
 
     # Gemini backend — generation and embedding are separate classes with separate models.
     gemini_api_key: str = ""

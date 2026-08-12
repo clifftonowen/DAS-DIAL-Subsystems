@@ -185,22 +185,44 @@ those are configured.
 Every UC2 test carries its plan ID in its docstring (`"""UT-2.5: ..."""`), and each module's
 docstring maps activation bars to the IDs it covers — the convention UC6/UC8 established.
 
-### Covered by the PM3 test plan
+### Superseded by the design change — UT-2.1 – UT-2.11 and IT-2.1 – IT-2.11
 
-| Bar | Unit under test | IDs | File |
-|-----|-----------------|-----|------|
-| AB2.2 | `ProfileController.generateProfile` | UT-2.1, UT-2.2 | `unit/test_uc2_generate_profile.py` |
-| AB2.3 | `ProfilingService.generateProfile` | UT-2.3 – UT-2.5 | `unit/test_uc2_generate_profile.py` |
-| AB2.4 | `AssessmentRepository.findByLearner` | UT-2.6, UT-2.7 | `unit/test_uc2_generate_profile.py` |
-| AB2.5 | `ProfilingAlgorithm.analyse` | UT-2.8, UT-2.9 | `unit/test_profiling_algorithm.py` |
-| AB2.6 | `LearnerProfileRepository.saveProfile` | UT-2.10, UT-2.11 | `unit/test_uc2_generate_profile.py` |
-| — | bottom-up call graph, levels 1→4 | IT-2.1 – IT-2.11 | `integration/test_uc2_generate_profile.py` |
+**These eleven plan IDs are void, and the files the plan named were never written.** They are
+listed here rather than deleted so a reader tracing the PM3 plan finds out *why* there is no
+`test_uc2_generate_profile.py` instead of concluding the tier is missing.
 
-### Extends the plan — clustering has no IDs there
+The plan's UC2 assumed `ProfilingAlgorithm.analyse()` deriving seven cognitive dimensions from
+`assessment_records.task_results` by keyword, then persisting them through
+`LearnerProfileRepository.saveProfile()` into a `learner_profiles` table. Both are gone. The
+dimensions were mock scaffolding; the system standardises on the four marks DAS actually
+measures, and `learner_profiles` was dropped in the 2026-08-07 merge (`activity_repository.py:17`
+records the foreign key that moved with it). "Generate a profile" is now a **promotion**: read
+the newest `learner_sittings` row and make it the learner's current marks. There is no
+derivation left to test.
 
-`ProfilingAlgorithm.cluster()` is declared in the class diagram but carries no test ID in the
-PM3 UC2 plan. These IDs **continue** the sequence rather than renumbering it, so the existing
-plan rows stay valid and the plan needs only appending.
+| Void bar | What the plan expected | Status | Covered instead by |
+|----------|------------------------|--------|--------------------|
+| AB2.2 | `ProfileController.generateProfile` | reshaped | **IT-2.29 – IT-2.32** (`integration/test_uc2_generate_profile.py`) |
+| AB2.3 | `ProfilingService.generateProfile` | reshaped | **UT-2.61, UT-2.62**, IT-2.28 |
+| AB2.4 | `AssessmentRepository.findByLearner` | no longer the source | **UT-2.64, UT-2.65**, IT-2.27 |
+| AB2.5 | `ProfilingAlgorithm.analyse` | **deleted** | nothing — the method does not exist |
+| AB2.6 | `LearnerProfileRepository.saveProfile` | **table dropped** | nothing — the table does not exist |
+| — | IT-2.1 – IT-2.11 | reshaped | IT-2.12 onwards, below |
+
+Two IDs are worth calling out because they look like holes but are not:
+`ProfilingService` raises exactly one error now, `NoScoresError` (409), covered by UT-2.62 and
+IT-2.30; and the sitting history the plan expected `findByLearner` to return is UT-2.63 /
+`list_sittings()`.
+
+`integration/test_uc2_generate_profile.py` **reuses the plan's file name** for IT-2.27 – IT-2.32.
+The name is the one the plan gave IT-2.1 – IT-2.11, so a reader tracing the plan lands somewhere
+real; the contents are the current design's, not the void one's.
+
+### The current map — AB2.7 onwards
+
+Everything below either extends the plan (clustering, the workbook, the React tier carry no IDs
+there) or replaces a void bar above. The IDs **continue** the sequence rather than renumbering
+it, so surviving plan rows stay valid and the plan needs only appending.
 
 | Bar | Unit under test | IDs | File |
 |-----|-----------------|-----|------|
@@ -211,7 +233,26 @@ plan rows stay valid and the plan needs only appending.
 | AB2.11 | `dial_workbook._band_group` | UT-2.25 | `unit/test_dial_workbook.py` |
 | AB2.12 | `dial_workbook.coverage` + feature sets | UT-2.26 | `unit/test_dial_workbook.py` |
 | AB2.13 | `Graph.jsx` (React) | UT-2.27 – UT-2.36 | `frontend/src/components/__tests__/Graph.test.jsx` |
+| AB2.14 | `LearnerOverviewService.get_overview` | UT-2.37, UT-2.38 | `unit/test_learner_overview_service.py` |
+| AB2.15 | `LearnerOverviewService._metrics` | UT-2.39, UT-2.40 | `unit/test_learner_overview_service.py` |
+| AB2.16 | `ingest_dial_data.build_rows` | UT-2.43, UT-2.44 | `unit/test_ingest_dial_data.py` |
+| AB2.18 | `dial_workbook.percentiles` | UT-2.46, UT-2.47 | `unit/test_dial_workbook.py` |
+| AB2.19 | `ProfileRadarChart.jsx` (React) | UT-2.48 – UT-2.52 | `frontend/src/components/__tests__/ProfileRadarChart.test.jsx` |
+| AB2.20 | `MainPage.jsx` (React) | UT-2.53 – UT-2.55 | `frontend/src/views/__tests__/MainPage.clusterClickthrough.test.jsx` |
+| AB2.21 | `LearnersPage.jsx` (React) | UT-2.56 – UT-2.60 | `frontend/src/views/__tests__/LearnersPage.test.jsx` |
+| AB2.22 | `ProfilingService.generate_profile` | UT-2.61, UT-2.62 | `unit/test_profiling_service.py` |
+| AB2.23 | `ProfilingService.list_sittings` | UT-2.63 | `unit/test_profiling_service.py` |
+| AB2.24 | `LearnerSittingRepository` | UT-2.64, UT-2.65 | `unit/test_learner_sitting_repository.py` |
+| AB2.25 | `ScoreHistoryChart.jsx` (React) | UT-2.66 – UT-2.70 | `frontend/src/components/__tests__/ScoreHistoryChart.test.jsx` |
+| AB2.26 | `dial_workbook.latest_per_semester` | UT-2.71, UT-2.72 | `unit/test_dial_workbook.py` |
+| AB2.27 | `tests.support.fake_supabase` contract | UT-2.73 | `unit/test_fake_supabase_contract.py` |
 | — | bottom-up call graph for `/dashboard/clusters` | IT-2.12 – IT-2.19 | `integration/test_dashboard_clusters.py` |
+| — | bottom-up call graph for `/learners/{id}/overview` | IT-2.20 – IT-2.26 | `integration/test_learner_overview.py` |
+| — | bottom-up call graph for `POST /profiles/{id}` | IT-2.27 – IT-2.32 | `integration/test_uc2_generate_profile.py` |
+
+**AB2.17 and UT-2.41, UT-2.42, UT-2.45 are unused.** They were reserved while the workbook bars
+were being split and never claimed. Left as gaps deliberately: renumbering to close them would
+invalidate every ID already written into a docstring.
 
 Within AB2.13, the two dashboard controls are:
 
@@ -228,21 +269,76 @@ unfiltered rows to prevent exactly that, and this test is what holds it in place
 ### Not yet implemented
 
 **ST-2.1 – ST-2.4** (Selenium, browser UI) and the UC2 **end-to-end** flow. Both are Week 13
-items in the plan. ST-2.2/2.3/2.4 exercise the three error branches through the browser, which
-the 404/422/500 mapping in `routers/profiles.py` now makes distinguishable.
+items in the plan. Verified absent: no `ST-2.x` string appears in any `.py` file.
 
-### Error types the plan requires
+Note that only two of the plan's four ST-2 branches are still reachable, because UC2 now has
+two failure modes rather than four (see the error table below). ST-2.1 is the happy path and
+ST-2.2 is the no-scores branch; ST-2.3 and ST-2.4 were written against `NoPatternError` and
+`ProfileGenerationError`, which no longer exist.
 
-The plan's failure branches did not exist in code before these tests; they were added with them:
+### Error types UC2 actually raises
 
-| Exception | Raised by | Flow | HTTP |
-|-----------|-----------|------|------|
-| `EmptyDataError` | `ProfilingService` | 2a — learner has no records | 404 |
-| `NoPatternError` | `ProfilingAlgorithm.analyse` | 4a — nothing evidenced | (translated) |
-| `ProfileGenerationError` | `ProfilingService` | 4a, after translation | 422 |
-| `StorageError` | `repositories/base.py` | 6a — database refused | 500 |
+**The plan's four-way error table is void.** It described `EmptyDataError` (404),
+`NoPatternError`, `ProfileGenerationError` (422) and `StorageError` (500). The first three were
+removed with `analyse()` and the `learner_profiles` table; a promotion cannot fail to find a
+pattern, because it derives nothing. What `routers/profiles.py:28-33` maps today:
 
-`analyse()` previously returned a seven-way NEUTRAL dict when nothing could be scored. It now
-raises `NoPatternError` instead, because an all-NEUTRAL result renders as a complete radar
-chart sitting at exactly 50% on every axis — a confident-looking statement about a learner we
-know nothing about.
+| Exception | Raised by | Flow | HTTP | Covered by |
+|-----------|-----------|------|------|------------|
+| `NoScoresError` | `services/profiling_service.py:38` | learner has no sittings | **409** | UT-2.62, IT-2.28d, **IT-2.30** |
+| `StorageError` | `repositories/base.py` | database refused | 500 | **IT-2.32b** (forced) |
+
+**`StorageError` is never raised on this path, so the router's `except` clause is dead code.**
+`repositories/base.StorageError` is raised in four places (`assessment_repository`,
+`assessment_service` ×2, `review_service`), and neither `LearnerRepository.save` nor
+`LearnerSittingRepository.latest_for_learner` is one of them: both call `.execute()` bare. A real
+outage during Generate Profile therefore escapes as the raw driver exception, and FastAPI turns
+it into a 500 with no `detail`. IT-2.32 pins that as the *actual* behaviour so wrapping the
+repository later fails the test loudly; IT-2.32b proves the clause itself maps correctly once
+something does raise it. The fix belongs in `LearnerRepository`, not in the tests.
+
+**409, not 404, and that distinction is load-bearing.** The learner exists and the request was
+well-formed; the resource is just not in a state that can satisfy it yet. `LearnerDetailPage`
+keys its inline "upload an assessment" prompt off exactly this status, so collapsing it into 404
+(which also means "no such learner") would leave the UI unable to tell the two apart. This is
+also the status UC1 exists to stop the therapist ever seeing.
+
+---
+
+## UC5 traceability — Retrieve Instructional Strategy (included by UC3)
+
+**The diagram's names are not the code's names.** The UC5 sequence diagram labels its lifelines
+`RetrievalService` and `KnowledgeBaseRepository`. What `ActivityGenerationService` actually calls
+is `CurriculumRetrievalService` / `CurriculumRepository`, over the `curriculum_chunks` corpus
+rather than an `instructional_strategies` one. Mapped here rather than renaming either side:
+
+| Diagram lifeline | Code |
+|------------------|------|
+| `RetrievalService.retrieve()` | `CurriculumRetrievalService.retrieve()` |
+| `KnowledgeBaseRepository.search()` | `CurriculumRepository.hybrid_match_curriculum()` |
+| `instructional_strategies` | `curriculum_chunks` |
+
+| Bar | Unit under test | IDs | File |
+|-----|-----------------|-----|------|
+| AB5.1 | `CurriculumRetrievalService.retrieve` | UT-5.5 – UT-5.9 | `unit/test_uc5_retrieve_strategy.py` |
+| AB5.2 | `LLMApiClient.embed` / `embed_many` | UT-5.10, UT-5.11 | `unit/test_uc5_retrieve_strategy.py` |
+| AB5.3 | `CurriculumRepository.*match_curriculum` | UT-5.12, UT-5.13 | `unit/test_uc5_retrieve_strategy.py` |
+| AB5.4 | `curriculum_repository._with_alt` | UT-5.14, UT-5.15 | `unit/test_uc5_retrieve_strategy.py` |
+| AB5.5 | `llm_client._unit` | UT-5.16, UT-5.17 | `unit/test_uc5_retrieve_strategy.py` |
+| AB5.6 | `OllamaProvider._task_prefix` | UT-5.18 | `unit/test_uc5_retrieve_strategy.py` |
+| — | bottom-up call graph, levels 1→2 | IT-5.1, IT-5.3, IT-5.4 | `integration/test_uc5_retrieve_strategy.py` |
+
+**UT-5.1 – UT-5.4 are reserved, not missing.** They belong to the diagram's `RetrievalService`
+lifeline; the unit IDs start at UT-5.5 so the plan's own numbering stays usable if that lifeline
+is ever implemented as a second corpus. **IT-5.2 is absent** for the same reason: the integration
+call graph has two levels, not three, because there is no service between the repository and the
+RPC.
+
+### The one thing a UC5 reader must know
+
+`retrieve()` catches **every** exception and returns `[]` (`curriculum_retrieval_service.py:52`).
+An empty corpus, a filter that matched nothing, a missing migration and Supabase being down are
+all indistinguishable to a caller. That is survivable only because UC3's `MIN_SIMILARITY` gate
+treats no-grounding as fatal and refuses to generate, so a swallowed outage becomes a refusal
+rather than an ungrounded activity. **UT-5.9 pins the swallow and says why**; remove the gate
+above it and this becomes a silent failure that produces confident, unsourced worksheets.

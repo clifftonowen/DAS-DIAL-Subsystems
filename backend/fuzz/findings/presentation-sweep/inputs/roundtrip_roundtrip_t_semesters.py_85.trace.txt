@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\runner.py", line 94, in run_one
+    self.target.run(data)
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\targets\t_semesters.py", line 85, in run
+    roundtrip(
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\oracles.py", line 47, in roundtrip
+    raise OracleViolation(OracleKind.ROUNDTRIP, message)
+fuzz.oracles.OracleViolation: accepted '0999 Sem 2' but reformats it as '999 Sem 2'

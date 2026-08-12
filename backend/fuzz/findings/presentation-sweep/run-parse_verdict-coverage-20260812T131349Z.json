@@ -1,0 +1,27 @@
+{
+  "target": "parse_verdict",
+  "strategy": "coverage",
+  "seed": 15,
+  "elapsed_seconds": 51.43,
+  "execs": 18130,
+  "execs_per_second": 352.5,
+  "rejected_pct": 0.0,
+  "slowest_input_ms": 60.8,
+  "distinct_findings": 1,
+  "corpus_size": 73,
+  "generations": 19,
+  "generations_kept": 1,
+  "branch_arcs_reached": 43,
+  "measured_package": "app.prompts",
+  "findings": [
+    {
+      "kind": "invariant",
+      "signature": "invariant:invariant:t_parse_verdict.py:141",
+      "message": "top_similarity returned the bool True where a float was promised",
+      "hits": 3338,
+      "shortest_input_bytes": 14,
+      "shortest_input": "{\"valid\": true",
+      "slowest_ms": 0.3
+    }
+  ]
+}

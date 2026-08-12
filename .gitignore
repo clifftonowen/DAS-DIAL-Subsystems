@@ -39,5 +39,14 @@ CODEBASE_SUMMARY.md
 PM3_Test_Plan_UC6_UC8.md
 docs/
 
-#Fuzzing Corpus
+# Fuzzing corpus — thousands of evolved input blobs, regenerable from a campaign's
+# recorded seed. Noise in a diff, so not tracked.
 backend/fuzz/corpus/
+
+# Campaign console logs and raw run output. Also regenerable, also noise.
+backend/fuzz/findings/*.log
+backend/fuzz/findings/*.err
+
+# The findings THEMSELVES stay tracked: the JSON summaries and the minimised reproducing
+# inputs beside them are the evidence behind docs/PM_Robustness_Testing.md, and a defect
+# report nobody else can replay is not a defect report.

@@ -1,0 +1,36 @@
+{
+  "target": "http_api",
+  "strategy": "coverage",
+  "seed": 13,
+  "elapsed_seconds": 51.46,
+  "execs": 2109,
+  "execs_per_second": 41.0,
+  "rejected_pct": 0.0,
+  "slowest_input_ms": 97.2,
+  "distinct_findings": 2,
+  "corpus_size": 142,
+  "generations": 15,
+  "generations_kept": 3,
+  "branch_arcs_reached": 837,
+  "measured_package": "app",
+  "findings": [
+    {
+      "kind": "crash",
+      "signature": "crash:ValidationError:assessment_service.py:60",
+      "message": "ValidationError: 1 validation error for AssessmentRecord\nassessment_date\n  Input should be a valid date or datetime, input is too short [type=date_from_datetime_parsing, input_value='', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.9/v/date_from_datetime_parsing",
+      "hits": 55,
+      "shortest_input_bytes": 2,
+      "shortest_input": "\f\ufffd",
+      "slowest_ms": 14.4
+    },
+    {
+      "kind": "crash",
+      "signature": "crash:ValueError:starlette/responses.py:181",
+      "message": "ValueError: Out of range float values are not JSON compliant",
+      "hits": 17,
+      "shortest_input_bytes": 5,
+      "shortest_input": "\u0000\u0001\ufffdu ",
+      "slowest_ms": 6.2
+    }
+  ]
+}

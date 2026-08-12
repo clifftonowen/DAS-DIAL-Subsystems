@@ -160,12 +160,21 @@ the eleven above are stated with confidence.
 `Infinity` into a float field and then *starlette* fails to encode the response. The bucketing was
 blaming our own call site, so it now falls back to the deepest framework frame.
 
+**What the HTTP results do and do not cover.** Stubbing the database is what makes the campaign
+fast and repeatable, and it also bounds the claim: `FakeSupabase` is an in-memory stand-in, so
+findings below the repository layer — PostgREST filter semantics, constraint violations, the real
+pgvector RPCs — are out of reach by construction. `http_api` tests the request path down to the
+repository boundary. Everything past it is covered by the e2e tier against the real test project,
+which is a different tier for a reason.
+
 ---
 
 ## 5. Findings
 
-All reproducible from the artifacts in `backend/fuzz/findings/`, each with its minimised input and
-full traceback. Seeds are recorded, so every run replays exactly.
+All reproducible from `backend/fuzz/findings/presentation-sweep/`, which holds the JSON summary
+per target plus the minimised reproducing input and full traceback for every defect below. Seeds
+are recorded, so campaigns replay exactly; that folder's README shows how to replay a single
+input.
 
 Eleven distinct defects, from a six-minute sweep across all seven targets.
 
@@ -233,6 +242,11 @@ but should be ready by the final presentation".
   the brief's named tools.
 - **CI job.** A 60-second smoke campaign per pull request.
 - **Shrinking.** We keep the shortest input seen per bucket; a real shrinker would minimise properly.
+- **Weight the budget by target speed.** `--target all` splits the budget evenly, but throughput
+  differs by three orders of magnitude — `semesters` runs at ~15,700 execs/s and `assessment_docx`
+  at ~14, because the latter builds and re-parses a real Word document every iteration. An equal
+  time slice therefore buys wildly unequal exploration. Per-target weights would spend the 24-hour
+  campaign where it buys the most coverage rather than where the clock happens to fall.
 
 ---
 

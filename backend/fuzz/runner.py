@@ -154,7 +154,8 @@ class Campaign:
         """
         from fuzz.cov_feedback import SUITE_SIZE, ArcTracker
 
-        tracker = ArcTracker()
+        tracker = ArcTracker(self.target.measured)
+        suite_size = self.target.suite_size or SUITE_SIZE
         deadline = time.perf_counter() + budget_seconds
         next_report = time.perf_counter() + progress_every
         started = time.perf_counter()
@@ -162,7 +163,7 @@ class Campaign:
         self.kept_generations = 0
 
         while time.perf_counter() < deadline:
-            suite = [self.strategy.next() for _ in range(SUITE_SIZE)]
+            suite = [self.strategy.next() for _ in range(suite_size)]
             keepers: list[tuple[bytes, float]] = []
 
             def run_suite() -> None:
@@ -211,6 +212,16 @@ class Campaign:
 
         self.arcs_total = tracker.total
         self._progress(time.perf_counter() - started, final=True, arcs_total=tracker.total)
+
+        # Zero arcs after a full budget means the tracer measured the wrong package, not that the
+        # code has no branches. Say so loudly: the run still produces crash findings and would
+        # otherwise be filed as "guided" when it was really unguided mutation.
+        if tracker.total == 0:
+            print(
+                f"WARNING {self.target.name}: 0 branch arcs from source={self.target.measured!r}. "
+                f"Coverage guidance was inactive; this run is mutation-only.",
+                flush=True,
+            )
 
     def run(self, budget_seconds: float, progress_every: float = 10.0) -> None:
         deadline = time.perf_counter() + budget_seconds
@@ -270,6 +281,7 @@ class Campaign:
             "generations": self.generations,
             "generations_kept": self.kept_generations,
             "branch_arcs_reached": self.arcs_total,
+            "measured_package": self.target.measured,
             "findings": [
                 {
                     "kind": f.kind.value,
@@ -302,7 +314,31 @@ def _write_artifacts(campaign: Campaign, out_dir: Path, summary: dict) -> None:
             (inputs_dir / f"{safe}.trace.txt").write_text(finding.traceback, encoding="utf-8")
 
 
+def _make_stdout_unbreakable() -> None:
+    """Stop the console encoding from killing a campaign at the reporting stage.
+
+    A Windows console is cp1252 by default. Findings are printed with their shortest reproducing
+    input, and a fuzzer's inputs are arbitrary bytes, so the repr routinely contains characters
+    cp1252 cannot encode - U+FFFD above all, since `as_text` decodes with errors="replace". The
+    result was a UnicodeEncodeError thrown by `print` AFTER the run finished: the artifacts were
+    already on disk, but the process died before the remaining targets of a `--target all` sweep
+    ever started. An overnight run would have lost every target after the first one to find a
+    non-ASCII reproducer.
+
+    Reconfiguring the stream is the fix rather than sanitising each message, because the progress
+    lines, the finding summaries and any traceback all go through the same encoder.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, ValueError, OSError):
+            # Redirected to something that is not a reconfigurable text stream. Nothing to do:
+            # a pipe is almost always utf-8 already, and failing here would defeat the purpose.
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _make_stdout_unbreakable()
     parser = argparse.ArgumentParser(prog="fuzz.runner", description="DAS D.I.A.L fuzzer")
     parser.add_argument("--strategy", default="mutation", choices=sorted(STRATEGIES))
     parser.add_argument("--target", default="assessment_text",
@@ -342,7 +378,25 @@ def main(argv: list[str] | None = None) -> int:
             corpus_root=args.corpus,
         )
         started = time.perf_counter()
-        campaign.go(per_target, progress_every=1e9 if args.quiet else 10.0)
+        try:
+            campaign.go(per_target, progress_every=1e9 if args.quiet else 10.0)
+        except KeyboardInterrupt:
+            # Ctrl-C should still leave the evidence behind: write what this target found before
+            # re-raising, rather than discarding an hour of campaign because someone stopped it.
+            _write_artifacts(campaign, args.out, campaign.summary(time.perf_counter() - started))
+            raise
+        except Exception as engine_failure:  # noqa: BLE001
+            # A defect in the ENGINE, not in the program under test - a target whose seams broke,
+            # an unreadable corpus file. An unattended sweep must not lose the remaining targets
+            # to it: report it, keep the partial findings, and move on. The exit code still says
+            # something went wrong.
+            print(
+                f"\nENGINE FAILURE in target {target.name}: "
+                f"{type(engine_failure).__name__}: {engine_failure}",
+                flush=True,
+            )
+            print(format_traceback(engine_failure), flush=True)
+            exit_code = 2
         summary = campaign.summary(time.perf_counter() - started)
         _write_artifacts(campaign, args.out, summary)
 

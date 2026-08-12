@@ -158,6 +158,29 @@ class AssessmentTextTarget(Target):
         _check_parsed(preview)
 
 
+#: C0 control characters XML 1.0 forbids. Tab, newline and carriage return are legal and stay.
+_XML_FORBIDDEN = {c: None for c in range(0x20) if c not in (0x09, 0x0A, 0x0D)}
+_XML_FORBIDDEN[0x0B] = None  # vertical tab: below 0x20 already, listed for the reader
+_XML_FORBIDDEN[0x0C] = None  # form feed: same
+
+
+def _xml_safe(text: str) -> str:
+    """Drop characters a `.docx` cannot physically contain.
+
+    NOT the fuzzer going easy on the parser - the opposite. `python-docx` raises "All strings must
+    be XML compatible" when ASKED TO WRITE these, so the failure happens in the harness building
+    its input, several steps before `parse_assessment_report` is called. It was reported as a
+    crash finding, and it is not one: a Word document is a zip of XML, XML 1.0 cannot represent a
+    NUL or a bare 0x01, so no real upload can carry one either.
+
+    Leaving it in would spend the docx target's budget rediscovering a limitation of the document
+    format. The bytes are still fuzzed everywhere they can actually appear - `assessment_text`
+    drives the same parser directly with no format to satisfy, and `http_api` puts them on the
+    wire percent-encoded.
+    """
+    return text.translate(_XML_FORBIDDEN)
+
+
 class _UploadShim:
     """The two attributes `parse_assessment_report` actually touches: `.filename` and `.file`."""
 
@@ -188,7 +211,7 @@ class AssessmentDocxTarget(Target):
         import docx  # python-docx, already a runtime dependency
 
         document = docx.Document()
-        for line in as_text(data).split("\n"):
+        for line in _xml_safe(as_text(data)).split("\n"):
             document.add_paragraph(line)
         buffer = io.BytesIO()
         document.save(buffer)

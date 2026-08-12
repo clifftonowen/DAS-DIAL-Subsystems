@@ -33,11 +33,42 @@ def signature(kind: OracleKind, exc: BaseException | None, target: str) -> str:
 
     from fuzz.oracles import OracleViolation
 
-    roots = (_TARGETS_ROOT,) if isinstance(exc, OracleViolation) else (_APP_ROOT, _TARGETS_ROOT)
-    frame = _deepest_frame(exc, roots)
-    where = f"{frame[0]}:{frame[1]}" if frame else "outside-app"
     label = kind.value if isinstance(exc, OracleViolation) else type(exc).__name__
+
+    if isinstance(exc, OracleViolation):
+        frame = _deepest_frame(exc, (_TARGETS_ROOT,))
+    else:
+        # THE LIBRARY TIER EXISTS BECAUSE OF A MISLABELLED REPORT. The http_api target found a
+        # real 500 - the app accepts `Infinity` into a float field, then starlette cannot encode
+        # its own response - but NO app/ frame appears in that traceback, because the failure
+        # happens above our code in the framework's response renderer. The old two-tier fallback
+        # therefore blamed the fuzz target's own call site, and the finding read as a bug in the
+        # fuzzer. A framework frame is not our code, but it is a truthful and stable bucket key,
+        # and it is strictly better than pointing at ourselves.
+        #
+        # Still not the deepest frame overall: that would be json/encoder.py, which is where every
+        # unrelated serialisation failure in the process also dies, so it would merge bugs the
+        # framework frame keeps apart.
+        frame = _deepest_frame(exc, (_APP_ROOT,)) or _deepest_library_frame(exc) \
+            or _deepest_frame(exc, (_TARGETS_ROOT,))
+
+    where = f"{frame[0]}:{frame[1]}" if frame else "outside-app"
     return f"{kind.value}:{label}:{where}"
+
+
+def _deepest_library_frame(exc: BaseException) -> tuple[str, int] | None:
+    """Deepest third-party frame, named `<package>/<file>:<line>` so starlette and httpx are
+    distinguishable rather than both collapsing to a bare `responses.py`."""
+    found = None
+    for frame in traceback.extract_tb(exc.__traceback__):
+        path = Path(frame.filename)
+        parts = path.parts
+        if "site-packages" not in parts:
+            continue
+        index = parts.index("site-packages")
+        package = parts[index + 1] if len(parts) > index + 1 else "?"
+        found = (f"{package}/{path.name}", frame.lineno)
+    return found
 
 
 def _deepest_frame(exc: BaseException, roots: tuple[Path, ...]) -> tuple[str, int] | None:

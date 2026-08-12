@@ -28,12 +28,20 @@ from pathlib import Path
 import coverage
 from coverage.exceptions import CoverageWarning
 
+# Also filtered globally, not just inside `measure`'s context manager. The per-call
+# `catch_warnings` block below does not actually suppress these in practice, and an overnight run
+# starts a tracer thousands of times, so the two warnings coverage always emits here
+# ("module-not-measured" for the pre-imported target modules, "no-data-collected" for the
+# per-input attribution passes that touch nothing) would otherwise bury the progress lines.
+warnings.filterwarnings("ignore", category=CoverageWarning)
+
 #: Inputs per generation. Chosen from the table above: 1000 is where the tracing overhead falls
 #: to ~3.5x, and going to 3000 buys only another 0.6x while making each generation's feedback
 #: coarser (more inputs share the credit for any new arc found).
 SUITE_SIZE = 1000
 
-#: Measured as a MODULE name, not a path.
+#: Default package to measure, as a MODULE name, not a path. Each target overrides it via
+#: `Target.measured`; this constant is only the fallback for the ingestion targets that came first.
 #:
 #: `include=[<absolute windows path>*]` silently collects nothing - measured, 0 files and 0 arcs,
 #: with only a "No data was collected" warning to show for it. `source=["app.ingestion"]` collects

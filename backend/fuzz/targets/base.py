@@ -27,6 +27,20 @@ class Target:
     oracles: tuple[str, ...] = ("crash", "hang")
     #: cap on generated input size, in bytes
     max_size: int = 65536
+    #: package the feedback-guided strategy measures coverage of, as a MODULE name.
+    #:
+    #: This has to be per-target, and getting it wrong fails silently in the worst way: coverage
+    #: collects nothing, every generation looks like it found no new arcs, none are kept, and the
+    #: "coverage" strategy quietly degrades into plain mutation while still reporting itself as
+    #: guided. A target must name the package its unit actually lives in. See cov_feedback.py for
+    #: why this is a module name and not a path.
+    measured: str = "app.ingestion"
+    #: Inputs per generation for the feedback-guided strategy. None means the module default in
+    #: cov_feedback.SUITE_SIZE, which was tuned against microsecond-scale string functions. A
+    #: target whose single execution costs milliseconds needs a smaller suite: the generation
+    #: itself takes proportionally longer, and the per-input attribution pass that follows a
+    #: winning generation scales with the suite size too.
+    suite_size: int | None = None
     #: BNF for the target's input language, used by the generation-based strategy. Optional:
     #: a target without one falls back to random generation, and the runner says so.
     grammar: dict | None = None

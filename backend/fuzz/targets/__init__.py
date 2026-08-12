@@ -7,7 +7,14 @@ whatever oracles apply to it.
 from __future__ import annotations
 
 from fuzz.targets.base import Target, REGISTRY, register  # noqa: F401
-from fuzz.targets import t_assessment_parser, t_normalise, t_semesters  # noqa: F401,E402
+from fuzz.targets import (  # noqa: F401,E402
+    t_assessment_parser,
+    t_http_api,
+    t_normalise,
+    t_parse_verdict,
+    t_percentiles,
+    t_semesters,
+)
 
 
 def get(name: str) -> Target:

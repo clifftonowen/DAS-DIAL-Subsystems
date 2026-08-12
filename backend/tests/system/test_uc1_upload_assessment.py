@@ -19,9 +19,7 @@ which semester is "latest" for the seeded learner on the next run.
 Needs the app running (backend :8000, built frontend :4173) and the test project's credentials —
 see backend/tests/README.md. Skips rather than fails without them.
 """
-import io
 import os
-import uuid
 
 import pytest
 
@@ -39,9 +37,10 @@ UPLOAD_BUTTON = "//button[normalize-space()='Upload Assessment']"
 PARSE_BUTTON = "//button[normalize-space()='Parse report']"
 CONFIRM_BUTTON = "//button[normalize-space()='Confirm & save']"
 
-# Far past the workbook's range (2022 Sem 1 - 2026 Sem 1), so an upload from this suite is always
-# the learner's newest sitting and never collides with seeded data.
-SYSTEM_SEMESTER = "2099 Sem 1"
+# NO FIXED SEMESTER CONSTANT. These tests take whichever semester the form offers first, which
+# `GET /assessments/semesters` guarantees is a LOOKAHEAD one (on-record plus the next two), so it
+# is always past the workbook's range and never collides with seeded data — without hardcoding a
+# value the form has no option for. See select_semester.
 
 REPORT_TEXT = """Assessment Date: 2026-07-24
 Phoneme Segmentation 7 10
@@ -76,54 +75,118 @@ def corrupt_file(tmp_path):
     return str(path)
 
 
+class _Created:
+    """What a test wrote, so teardown can undo exactly that and nothing else."""
+
+    def __init__(self, learner_id):
+        self.learner_id = learner_id
+        self.semesters = set()
+
+
 @pytest.fixture
 def uploaded_sitting(supabase_env):
-    """Deletes the sitting a test created, in teardown.
+    """Deletes the sittings a test created, in teardown.
 
-    Left behind, a 2099 sitting is permanently the learner's newest — so UC2's system tests would
-    promote it forever after and fail for reasons unrelated to their own code.
+    The semesters are RECORDED rather than hardcoded because `select_semester` reads whichever
+    lookahead semester the API is currently offering — which moves as the workbook grows, and
+    would silently stop matching a constant here.
+
+    Left behind, a lookahead sitting is permanently the learner's newest, so UC2's system tests
+    would promote it forever after and fail for reasons unrelated to their own code.
     """
     from supabase import create_client
 
     learner_id = os.environ.get("TEST_LEARNER_ID")
     if not learner_id:
         pytest.skip("set TEST_LEARNER_ID to a learner in the test project")
-    yield learner_id
+    created = _Created(learner_id)
+    yield created
     sb = create_client(supabase_env["url"], supabase_env["key"])
-    try:
-        (sb.table("learner_sittings").delete()
-           .eq("learner_id", learner_id).eq("semester", SYSTEM_SEMESTER).execute())
-    except Exception:
-        pass
+    for semester in created.semesters:
+        try:
+            (sb.table("learner_sittings").delete()
+               .eq("learner_id", learner_id).eq("semester", semester).execute())
+        except Exception:
+            pass
 
 
-def open_upload_form(driver, base_url, timeout=20):
-    """From the learners list to the upload modal, as a therapist reaches it."""
+def open_upload_form(driver, base_url, timeout=30):
+    """From the learners list to the upload modal, with its SERVED METADATA already in.
+
+    THE WAIT ON THE LAST LINE IS LOAD-BEARING; every failure of this file's first CI run was its
+    absence. The modal renders the instant it opens, but the rubric and the semester list arrive
+    from two API calls behind one `Promise.all` in UploadView, and `/assessments/semesters` pages
+    the whole `learner_sittings` table (~23 round trips, ~2s from a laptop and slower from a
+    runner). Until both land, `metricSpecs` is `[]`, and the form is in a DIFFERENT STATE than
+    the one under test:
+
+      * labels read `phonics_score`, not "Phonics"
+      * the hint reads "Valid range: 0–…", so ST-1.3's ceiling message does not exist yet
+      * the semester select holds only a "Loading…" placeholder, so there is nothing real to pick
+        and `handleSubmit` bails on its `!semester` guard
+
+    Waiting on the phonics hint covers both calls: they sit behind one `Promise.all`, so they
+    resolve together or not at all.
+
+    The condition tests for the ABSENCE OF THE PLACEHOLDER rather than the presence of "0–50".
+    Waiting for a specific number would couple every test in this file to one ceiling, and a
+    rubric change would express itself as four 30-second timeouts instead of one clear assertion
+    failure in ST-1.3, which is where the number actually belongs.
+    """
     wait = WebDriverWait(driver, timeout)
     driver.get(f"{base_url}/learners")
     wait.until(EC.element_to_be_clickable((By.XPATH, UPLOAD_BUTTON))).click()
     wait.until(EC.presence_of_element_located((By.ID, "upload-file")))
+    wait.until(
+        lambda d: "0–…" not in d.find_element(By.ID, "upload-phonics_score-hint").text,
+        "the served rubric never arrived — GET /assessments/metrics or /semesters failed",
+    )
     return wait
 
 
-def select_semester(driver, semester=SYSTEM_SEMESTER):
-    """Pick the semester, adding the option if the list does not carry it.
+def select_semester(driver, wait, created=None):
+    """Select the NEWEST semester the form offers, and return it.
 
-    The dropdown offers what is on record plus the next two, so a far-future semester is not
-    normally there. Injecting the option keeps these tests independent of whatever data the
-    project happens to hold, which is the same reason they use 2099 at all.
+    WHY NOT A FIXED FAR-FUTURE SEMESTER. The first version of this file injected a `2099 Sem 1`
+    option with `select.add()` and dispatched a native change event. That cannot work, and it is
+    what made ST-1.1 fail: `<select>` here is a CONTROLLED component whose children are rendered
+    from the `semesters` array, which never contains 2099. React strips the foreign option on the
+    next reconciliation — and every keystroke into a metric field triggers one. The selection goes
+    with it, `handleSubmit` bails on its `!semester` guard (`UploadView.jsx:102`), and the click
+    on "Parse report" silently does nothing. The test then times out on a preview that was never
+    going to appear, several steps from the actual cause.
+
+    The newest OFFERED option gives the same isolation without fighting the framework. The
+    endpoint serves on-record semesters plus the next two, so index 0 is always a lookahead
+    semester no seeded sitting uses — currently `2027 Sem 1` against a workbook ending at
+    `2026 Sem 1`. It is a real option, so React keeps it.
+
+    Pass `created` (the `uploaded_sitting` record) from any test that CONFIRMS, so teardown knows
+    which row to delete. Reading the value rather than hardcoding it is what makes that possible.
     """
-    driver.execute_script(
-        """
-        const select = document.getElementById('upload-semester');
-        if (![...select.options].some(o => o.value === arguments[0])) {
-            select.add(new Option(arguments[0], arguments[0]));
-        }
-        select.value = arguments[0];
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-        """,
-        semester,
+    from selenium.webdriver.support.ui import Select
+
+    def first_real_option(d):
+        """Re-find the element every poll: React re-renders this select, and a handle held
+        across a render raises StaleElementReferenceException. Falsy until a real option
+        exists — before the fetch lands the only child is `<option value="">Loading…</option>`."""
+        options = Select(d.find_element(By.ID, "upload-semester")).options
+        return options and options[0].get_attribute("value")
+
+    semester = wait.until(first_real_option, "the semester list never populated")
+
+    select = Select(driver.find_element(By.ID, "upload-semester"))
+    select.select_by_value(semester)
+
+    # The form already defaults to this option; selecting it explicitly asserts that default and,
+    # more importantly, tells us WHICH semester the run is about to write.
+    wait.until(
+        lambda d: d.find_element(By.ID, "upload-semester").get_attribute("value") == semester,
+        f"the form did not accept the semester {semester!r}",
     )
+    if created is not None:
+        created.semesters.add(semester)
+    return semester
 
 
 def error_text(driver, timeout=20):
@@ -140,7 +203,7 @@ def test_st_1_1_therapist_uploads_an_assessment(
     login(driver, frontend_url, system_creds["email"], system_creds["password"])
     wait = open_upload_form(driver, frontend_url)
 
-    select_semester(driver)
+    select_semester(driver, wait, uploaded_sitting)
     driver.find_element(By.ID, "upload-phonics_score").send_keys("30")
     # Writing is left BLANK on purpose: band A never sits it, and blank has to mean "not
     # assessed" rather than a mark of zero. A zero would rank as the learner's weakest skill.
@@ -168,21 +231,23 @@ def test_st_1_1b_the_upload_reaches_the_learners_profile(
     login(driver, frontend_url, system_creds["email"], system_creds["password"])
     wait = open_upload_form(driver, frontend_url)
 
-    select_semester(driver)
+    semester = select_semester(driver, wait, uploaded_sitting)
     driver.find_element(By.ID, "upload-phonics_score").send_keys("30")
     driver.find_element(By.ID, "upload-file").send_keys(report_file)
     wait.until(EC.element_to_be_clickable((By.XPATH, PARSE_BUTTON))).click()
     wait.until(EC.element_to_be_clickable((By.XPATH, CONFIRM_BUTTON))).click()
     wait.until(lambda d: "Data saved successfully" in d.find_element(By.TAG_NAME, "body").text)
 
-    driver.get(f"{frontend_url}/learners/{uploaded_sitting}")
+    driver.get(f"{frontend_url}/learners/{uploaded_sitting.learner_id}")
     wait.until(EC.element_to_be_clickable(
         (By.XPATH, "//button[normalize-space()='Generate Profile']")
     )).click()
 
-    # No "no assessment scores yet" prompt: the profile has marks now.
-    wait.until(lambda d: "2099 Sem 1" in d.find_element(By.TAG_NAME, "body").text
+    # The promoted sitting is the one just uploaded — `semester`, not a hardcoded constant, so
+    # this still means something when the lookahead moves.
+    wait.until(lambda d: semester in d.find_element(By.TAG_NAME, "body").text
                          or "Phonics" in d.find_element(By.TAG_NAME, "body").text)
+    # No "no assessment scores yet" prompt: the profile has marks now.
     assert "no assessment scores" not in driver.find_element(By.TAG_NAME, "body").text.lower()
 
 
@@ -194,7 +259,7 @@ def test_st_1_2_a_corrupted_file_is_reported_and_stores_nothing(
     login(driver, frontend_url, system_creds["email"], system_creds["password"])
     wait = open_upload_form(driver, frontend_url)
 
-    select_semester(driver)
+    select_semester(driver, wait)
     driver.find_element(By.ID, "upload-phonics_score").send_keys("30")
     driver.find_element(By.ID, "upload-file").send_keys(corrupt_file)
     wait.until(EC.element_to_be_clickable((By.XPATH, PARSE_BUTTON))).click()
@@ -220,7 +285,7 @@ def test_st_1_3_an_out_of_range_mark_blocks_the_upload(
     login(driver, frontend_url, system_creds["email"], system_creds["password"])
     wait = open_upload_form(driver, frontend_url)
 
-    select_semester(driver)
+    select_semester(driver, wait)
     driver.find_element(By.ID, "upload-phonics_score").send_keys("51")   # ceiling is 50
     driver.find_element(By.ID, "upload-file").send_keys(report_file)
 

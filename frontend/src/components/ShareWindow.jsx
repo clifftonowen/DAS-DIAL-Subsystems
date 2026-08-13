@@ -141,3 +141,4 @@ export default function ShareWindow({ activityId, activityName = "this activity"
     </div>
   );
 }
+

@@ -18,7 +18,7 @@ test.describe.skip("UC7 Share Learning Activity", () => {
     // TODO (learner must have a generated activity so "Share" is enabled):
     // 1. logIn(page)
     // 2. navigate to /learners/${TEST_SHARE_LEARNER_ID}
-    // 3. click "Share", fill #share-email with a recipient
+    // 3. click "Share", fill  cvv#share-email with a recipient
     // 4. click Send
     // 5. expect a confirmation ("Activity sent...") — mock/point the email server at a test sink
     expect(EMAIL && PASSWORD).toBeTruthy();

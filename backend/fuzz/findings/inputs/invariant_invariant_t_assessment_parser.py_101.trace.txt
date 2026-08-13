@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\runner.py", line 94, in run_one
+    self.target.run(data)
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\targets\t_assessment_parser.py", line 158, in run
+    _check_parsed(preview)
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\targets\t_assessment_parser.py", line 101, in _check_parsed
+    invariant(
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\oracles.py", line 42, in invariant
+    raise OracleViolation(OracleKind.INVARIANT, message)
+fuzz.oracles.OracleViolation: task 'Letter Sound Knowledge' scored 18 out of 6

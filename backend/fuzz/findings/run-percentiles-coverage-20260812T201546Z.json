@@ -1,0 +1,27 @@
+{
+  "target": "percentiles",
+  "strategy": "coverage",
+  "seed": 20260817,
+  "elapsed_seconds": 4114.29,
+  "execs": 1747644,
+  "execs_per_second": 424.8,
+  "rejected_pct": 0.0,
+  "slowest_input_ms": 59.1,
+  "distinct_findings": 1,
+  "corpus_size": 73,
+  "generations": 1748,
+  "generations_kept": 2,
+  "branch_arcs_reached": 22,
+  "measured_package": "app.services",
+  "findings": [
+    {
+      "kind": "differential",
+      "signature": "differential:differential:t_percentiles.py:126",
+      "message": "percentile_of(nan) = 100.0 but dial_workbook.percentiles gives None for the same population of 1 marks",
+      "hits": 3645,
+      "shortest_input_bytes": 3,
+      "shortest_input": "NAN",
+      "slowest_ms": 1.6
+    }
+  ]
+}

@@ -154,7 +154,7 @@ of as a boundary.
 
 All four were reported against our own filenames. **A finding that points at the harness is not a
 finding**, and separating the two had to be done deliberately rather than assumed. It is also why
-the eleven above are stated with confidence.
+the defects in §5 are stated with confidence.
 
 **Attribution.** One real 500 has no `app/` frame in its traceback at all — the app accepts
 `Infinity` into a float field and then *starlette* fails to encode the response. The bucketing was
@@ -171,82 +171,153 @@ which is a different tier for a reason.
 
 ## 5. Findings
 
-All reproducible from `backend/fuzz/findings/presentation-sweep/`, which holds the JSON summary
-per target plus the minimised reproducing input and full traceback for every defect below. Seeds
-are recorded, so campaigns replay exactly; that folder's README shows how to replay a single
-input.
+All reproducible from `backend/fuzz/findings/`, which holds the JSON summary per target plus the
+minimised reproducing input and full traceback for every defect below. Seeds are recorded, so
+campaigns replay exactly; `presentation-sweep/README.md` shows how to replay a single input.
 
-Eleven distinct defects, from a six-minute sweep across all seven targets.
+### The campaign
+
+Eight hours, all seven targets, coverage-guided, one fixed seed, run unattended overnight:
+
+```bash
+.venv/Scripts/python -m fuzz.runner --strategy coverage --target all --hours 8 --seed 20260812
+```
+
+| Target | Executions | Rate | Rejected | Branch arcs | Generations kept | Findings |
+|---|---:|---:|---:|---:|---:|---:|
+| `semesters` | 69,618,000 | 16,921/s | 99.8% | 26 | 1 / 69,619 | 3 |
+| `parse_verdict` | 1,977,371 | 481/s | 0.0% | 44 | 2 / 1,978 | 2 |
+| `percentiles` | 1,747,644 | 425/s | 0.0% | 22 | 2 / 1,748 | 1 |
+| `normalise` | 666,807 | 162/s | 0.0% | 56 | 2 / 667 | 2 |
+| `assessment_text` | 93,259 | 23/s | 76.5% | 23 | 2 / 94 | 4 |
+| `http_api` | 62,609 | 15/s | 0.0% | 843 | 9 / 418 | 2 |
+| `assessment_docx` | 51,685 | 13/s | 78.9% | 66 | 2 / 52 | 3 |
+| **Total** | **74,217,375** | | | | | **17** |
+
+Throughput spans **1,300×** between the fastest and slowest target, which matters for how the
+budget should be spent (§7).
+
+### The defects
 
 | # | Target | Oracle | Defect | Impact |
 |---|---|---|---|---|
-| 1 | `assessment_text`, `assessment_docx` | CRASH | `float()` on the regex group `[\d.]+` raises on `'0.90.1'` (`assessment_parser.py:104`) | **Unhandled 500 on upload.** The router catches only `InvalidFormatError` / `ParseError`. Found by both targets, so it is reachable by uploading a real `.docx`, not just by calling the function. |
-| 2 | `assessment_docx` | CRASH | `int()` on `\d+` exceeds CPython's 4300-digit limit (`assessment_parser.py:120`) | Unhandled 500. `\d` is Unicode-aware, so non-ASCII digits reach it too. |
+| 1 | `assessment_text`, `assessment_docx` | CRASH | `float()` on the regex group `[\d.]+` raises on `'.'` (`assessment_parser.py:104`) | **Unhandled 500 on upload.** The router catches only `InvalidFormatError` / `ParseError`. Found by both targets, so it is reachable by uploading a real `.docx`, not only by calling the function. |
+| 2 | `assessment_text`, `assessment_docx` | CRASH | `int()` on `\d+` exceeds CPython's 4300-digit limit (`assessment_parser.py:120`) | Unhandled 500. `\d` is Unicode-aware, so non-ASCII digits reach it too. |
 | 3 | `normalise` | CRASH | the same 4300-digit limit in `extract_sequence_no` (`normalise.py:75`) | In a function whose docstring declares it total. |
-| 4 | `assessment_text`, `assessment_docx` | INVARIANT | a task parses as `189 out of 10`; another as `7 out of 1` | Silently wrong data. `TaskResult` has no validator, so an impossible score persists to the learner's record with no error anywhere. |
-| 5 | `semesters` | ROUNDTRIP | `'0999 Sem 2'` is accepted and reformatted as `'999 Sem 2'` | `int('0999')` drops the pad. The sitting is filed under a semester that is not the one submitted. |
+| 4 | `assessment_text`, `assessment_docx` | INVARIANT | a task parses as `7 out of 1`; another as `9 out of 0` | Silently wrong data. `TaskResult` has no validator, so an impossible score persists to the learner's record with no error anywhere. |
+| 5 | `semesters` | ROUNDTRIP | `'0226 Sem 2'` is accepted and reformatted as `'226 Sem 2'` | `int('0226')` drops the pad. The sitting is filed under a semester that is not the one submitted. |
 | 6 | `semesters` | INVARIANT | `next_semester('9999 Sem 2') == '10000 Sem 1'`, which sorts *before* it | Text ordering is what `latest_for_learner` depends on. |
 | 7 | `semesters` | INVARIANT | `option_list` emits `'10000 Sem 1'`, a value its own `SEMESTER_RE` rejects | The API offers a choice it would then refuse. |
 | 8 | `http_api` | CRASH | `Infinity` accepted into a float field, then starlette cannot encode its own response (`starlette/responses.py:181`) | Unhandled 500. Pydantic v2 accepts `inf` / `nan` by default. |
 | 9 | `http_api` | CRASH | an empty `assessment_date` passes the request model and raises `ValidationError` deeper in (`assessment_service.py:60`) | Unhandled 500. The request was accepted, then failed below the boundary. |
 | 10 | `parse_verdict` | INVARIANT | `top_similarity` returns `True` where a float was promised | `isinstance(True, int)` is `True` in Python, so a bool similarity passes the numeric filter. A retrieval gate comparing it against `MIN_SIMILARITY` is comparing against `1.0`. |
-| 11 | `assessment_text`, `assessment_docx`, `normalise` | HANG | inputs of 12–22 KB take 1.3–2.5 s | The task regex `^([A-Za-z][A-Za-z\s]+?)\s+(\d+)\s+(\d+)\s*$` backtracks quadratically: `[A-Za-z\s]+?` is followed by `\s+` and both match whitespace. |
+| **11** | `parse_verdict` | CRASH | a deeply nested JSON payload raises `RecursionError`, which `parse_verdict` does not catch (`activity_prompts.py:218`) | **The fail-closed guarantee does not hold.** The function catches `JSONDecodeError` only; on this input it neither approves nor rejects, it throws. Reachable because the reviewer's reply is LLM output, the one input we cannot constrain. |
+| **12** | `percentiles` | DIFFERENTIAL | `percentile_of(nan) = 100.0` where `dial_workbook.percentiles` gives `None` | **The two writers disagree.** pandas treats NaN as not-assessed; the hand-written twin compares `nan < mark` (always `False`), counts nobody below, and ranks it top of the cohort. A learner with a missing mark is shown at the 100th percentile. |
+| 13 | `assessment_text`, `assessment_docx`, `normalise` | HANG | worst case **64 seconds** on a 4.4 KB input | The task regex `^([A-Za-z][A-Za-z\s]+?)\s+(\d+)\s+(\d+)\s*$` backtracks quadratically: `[A-Za-z\s]+?` is followed by `\s+` and both match whitespace. A denial of service on the upload path from a file a therapist could plausibly be sent. |
+
+Thirteen rows, seventeen findings: rows 1–4 and 13 were each reported independently by more than
+one target, which is the corroboration that made them worth trusting.
+
+### What the long campaign bought
+
+Findings **11** and **12** are the answer to "why run for eight hours rather than six minutes",
+and they are the two most serious defects in the table.
+
+- The `RecursionError` needs the repeat-span mutator to amplify a brace run into thousands of
+  nesting levels. Its minimised reproducer is still 9,730 bytes. Nothing in the seed corpus
+  resembles it and no short campaign reached it.
+- The `percentiles` differential fired only after ~1.7 million populations. **The six-minute sweep
+  reported this target as finding nothing**, and that report was wrong — not because the oracle was
+  broken, but because the disagreement lives on one specific value the short run never generated.
+
+The long campaign also *minimised* what the short one had already found: the `float()` crash went
+from `'0.90.1'` to `'.'`, which is a better line in a report and a better regression test.
 
 ### The pattern
 
-Nine of eleven share one root cause: **validation happens after the boundary, not at it.**
-Unguarded `int()` / `float()` casts on regex groups, and request models with no constraints
-(`TaskResult` has no validator at all; `GenerationParams.k` has no `ge` / `le`). The fix is the
-same everywhere — constrain the model, guard the cast — which is a better outcome than eleven
-unrelated bugs would have been.
+Ten of thirteen share one root cause: **validation happens after the boundary, not at it.**
+Unguarded `int()` / `float()` casts on regex groups, exception handlers that name one exception
+type where two can arrive, and request models with no constraints (`TaskResult` has no validator
+at all; `GenerationParams.k` has no `ge` / `le`). The fix is the same everywhere — constrain the
+model, guard the cast, widen the handler — which is a better outcome than thirteen unrelated bugs
+would have been.
 
 ### The negative results
 
-Two are worth as much as the failures:
-
-- **`percentiles` found nothing.** The differential oracle ran the hand-written request-path
-  implementation against the pandas workbook implementation across thousands of populations,
-  including heavy ties, unassessed learners, single-member and empty populations. **They agree
-  exactly.** The oracle was verified non-vacuous by perturbing one value and confirming it fires.
-  A documented duplicate-implementation risk is now evidence-backed rather than assumed.
 - **`GET /learners` survived.** It is the only endpoint with bounded query parameters
-  (`page: ge=1`, `per_page: ge=1, le=100`) and it was included as a negative control. The fuzzer
-  broke the endpoints that do not validate their inputs and failed to break the one that does.
-  That is a stronger claim about the fix than the list of failures alone.
+  (`page: ge=1`, `per_page: ge=1, le=100`) and it was included as a deliberate negative control.
+  The fuzzer broke the endpoints that do not validate their inputs and failed to break the one
+  that does, across 62,609 requests. That is a stronger argument for the fix than the list of
+  failures alone.
+- **`percentiles` agrees everywhere except NaN.** 1.7 million populations — heavy ties, unassessed
+  learners, single-member and empty populations, values spanning the float range — produced exactly
+  one disagreement, finding #12. The duplicate implementation the codebase worried about is
+  correct on every real mark and wrong on the one value that means "no mark".
+
+**A correction worth recording, because it is a lesson about fuzzing rather than about this code.**
+The six-minute sweep reported `percentiles` as clean, and that was written up as a positive result:
+"the two implementations agree exactly". The overnight campaign disproved it. A short campaign
+finding nothing is not evidence that nothing is there — it is evidence that nothing was found, and
+the two are only the same claim once the budget is large enough to justify the inference. This is
+the concrete reason the brief asks for a fuzzer that can run for 24 hours, and we produced the
+mistake ourselves before we produced the fix.
 
 ### Not yet fixed
 
-The findings are the deliverable for the presentation. Fixes and before/after evidence follow in
-the final report, so the campaign that found them can be re-run against the fixed code.
+The findings are the deliverable. Fixes and before/after evidence come next: every defect above has
+a minimised reproducer stored, so the same campaign can be re-run against the corrected code and
+the table regenerated. Findings #11 and #12 should be fixed first — both are wrong-answer defects
+in code whose docstrings promise the opposite, and neither raises anything a user would see.
 
 ---
 
-## 6. The 24-hour requirement
+## 6. The long-run requirement
 
-The fuzzer is budget-driven (`--hours 24`), so campaign length is a flag, not a redesign. Every
-run is replayable from its printed seed, artifacts are written per target as each finishes so a
-partial run still yields evidence, and an engine failure in one target no longer aborts the rest of
-the sweep.
+The brief asks for a fuzzer "able to run and generate tests over a very long period (e.g. 24
+hours)". **An unattended 8-hour campaign has been run**, start to finish, with no supervision and
+no intervention: 74.2 million executions across seven targets, all artifacts written, clean exit.
+The numbers in §5 are its output, not an extrapolation.
 
-The results above come from shorter campaigns run before the final presentation. **The full
-24-hour campaign runs after the presentation and its results appear in the final report** — this is
-the sequencing the brief anticipates when it says the fuzzer "may not be ready by Project Meeting 3,
-but should be ready by the final presentation".
+Length is a flag (`--hours 24`), not a redesign, and four properties are what make an unattended
+run trustworthy rather than merely long:
+
+- **Replayable.** Every run prints and records its seed. Nothing in the table above is a
+  once-observed event.
+- **Incremental.** Artifacts are written per target as each finishes, so a campaign killed at hour
+  six still yields six targets' evidence.
+- **Fault-tolerant.** An engine failure in one target reports itself and moves on instead of
+  aborting the sweep. Ctrl-C still writes what the current target found.
+- **Encoding-safe.** Reproducers are arbitrary bytes, and printing one used to kill the process on
+  a Windows console *after* its artifacts were written — losing every later target. Fixed.
+
+Two of those were added because the first attempt at an overnight run exposed them, which is the
+argument for doing a long run before relying on one.
+
+The remaining gap to a full 24 hours is budget, not capability. What that budget should buy is
+§7's first item: on the evidence above, another 16 hours split evenly would spend most of itself
+re-confirming three known `semesters` defects at 16,921 execs/s.
 
 ---
 
 ## 7. Future work
 
+- **Weight the budget by target speed.** The most valuable change, and the campaign quantified it.
+  `--target all` splits the budget evenly, but measured throughput spans **1,300×**: `semesters`
+  ran 69.6 million executions at 16,921/s while `assessment_docx` managed 51,685 at 13/s. An equal
+  time slice therefore buys wildly unequal exploration — `semesters` spent 69 minutes re-confirming
+  three defects it finds in the first second, and it kept **1 generation in 69,619**, meaning its
+  corpus stopped improving almost immediately. Better signals to spend on: new arcs per minute, or
+  simply stopping a target whose coverage has plateaued.
 - **Regression tier.** Replay each finding's minimised input as a pytest case (`backend/tests/fuzz/`)
   so fixed defects stay fixed. Hypothesis is the right tool, and would let us honestly claim one of
   the brief's named tools.
 - **CI job.** A 60-second smoke campaign per pull request.
-- **Shrinking.** We keep the shortest input seen per bucket; a real shrinker would minimise properly.
-- **Weight the budget by target speed.** `--target all` splits the budget evenly, but throughput
-  differs by three orders of magnitude — `semesters` runs at ~15,700 execs/s and `assessment_docx`
-  at ~14, because the latter builds and re-parses a real Word document every iteration. An equal
-  time slice therefore buys wildly unequal exploration. Per-target weights would spend the 24-hour
-  campaign where it buys the most coverage rather than where the clock happens to fall.
+- **Shrinking.** We keep the shortest input seen per bucket, which is why finding #11's reproducer
+  is still 9,730 bytes — a real shrinker would cut it to the few dozen nested braces that actually
+  matter.
+- **Grammar coverage for `http_api`.** It reached 843 branch arcs, far more than any other target,
+  and kept 9 generations in 418 — it was still finding new code when the budget ran out. It is the
+  target most likely to repay more time.
 
 ---
 

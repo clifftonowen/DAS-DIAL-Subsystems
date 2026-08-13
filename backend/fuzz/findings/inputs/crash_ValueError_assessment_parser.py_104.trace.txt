@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\runner.py", line 94, in run_one
+    self.target.run(data)
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\targets\t_assessment_parser.py", line 141, in run
+    risk_score = _search_float(r"Risk Score:\s*([\d.]+)", text) or 0.0
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\app\ingestion\assessment_parser.py", line 104, in _search_float
+    return float(m.group(1)) if m else None
+           ^^^^^^^^^^^^^^^^^
+ValueError: could not convert string to float: '0.9.9'

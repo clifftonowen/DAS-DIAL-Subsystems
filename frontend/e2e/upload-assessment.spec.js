@@ -42,6 +42,12 @@ const REPORT_TEXT = [
  * select holds only a "Loading…" placeholder, and handleSubmit bails on its `!semester` guard —
  * so a click on "Parse report" silently does nothing and the failure surfaces several steps from
  * its cause.
+ *
+ * GET /assessments/semesters used to be the slow half of that Promise.all — ~23 paged round trips
+ * to deduplicate one column — until it moved onto the `distinct_semesters()` Postgres function
+ * (infra/migrations/2026-08-14_distinct_semesters.sql). It is one request now, so these waits
+ * should resolve almost immediately; they are kept because "almost" is not "always", and because
+ * a project that has not run the migration still takes the old paged path.
  */
 async function openUploadForm(page) {
   await logIn(page);
@@ -57,12 +63,12 @@ async function openUploadForm(page) {
   // would pass instantly and the failure would surface two steps later, at selectOption.
   //
   // The metric field existing proves `metricSpecs` populated, which is the rubric call.
-  await expect(page.locator("#upload-phonics_score")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#upload-phonics_score")).toBeVisible({ timeout: 20_000 });
   // A semester option with a real value proves the semesters call: while it is in flight the only
   // child is `<option value="">Loading…</option>` (UploadView.jsx:216), and handleSubmit bails on
   // its `!semester` guard, so "Parse report" would silently do nothing.
   await expect(page.locator("#upload-semester option[value]:not([value=''])").first())
-    .toBeAttached({ timeout: 30_000 });
+    .toBeAttached({ timeout: 20_000 });
 
   // The learner list is a third async source, belonging to LearnersPage rather than the modal.
   // Its options must exist before anything is submitted or `learnerId` is empty and parse refuses.
@@ -99,7 +105,7 @@ test.describe("UC1 Upload Assessment Data", () => {
     // "Confirm & save" button being present is the proof the parse succeeded; clicking it is what
     // this tier deliberately does not do (see the file header).
     await expect(page.getByRole("button", { name: "Confirm & save" })).toBeVisible({
-      timeout: 30_000,
+      timeout: 20_000,
     });
     await expect(page.getByText("Not assessed")).toBeVisible();
   });
@@ -125,7 +131,7 @@ test.describe("UC1 Upload Assessment Data", () => {
 
     await page.getByRole("button", { name: "Parse report" }).click();
 
-    await expect(page.locator("#upload-error")).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("#upload-error")).toBeVisible({ timeout: 20_000 });
     // The refusal has to be a dead end for the SAVE, not just a red box: reaching the preview on
     // a file that could not be parsed is the failure this guards against.
     await expect(page.getByRole("button", { name: "Confirm & save" })).toBeHidden();

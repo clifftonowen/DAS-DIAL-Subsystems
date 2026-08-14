@@ -15,7 +15,12 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 30_000,
+  // 60s per test, not 30. These drive a real browser against a real backend and a real Supabase
+  // project, and a single test can log in, navigate, submit and wait on a round trip. The budget
+  // has to exceed the SUM of the individual locator waits inside a test, or the test dies before
+  // any of them can report — turning "the semester list never arrived" into a bare "test timeout
+  // exceeded" with nothing pointing at the cause. Individual waits stay well under this.
+  timeout: 60_000,
   // Fail the run if a spec was committed with `test.only` left in it.
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

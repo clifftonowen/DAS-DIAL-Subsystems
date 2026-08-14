@@ -140,6 +140,27 @@ create table if not exists learner_sittings (
 );
 create index if not exists idx_sittings_learner on learner_sittings (learner_id, semester desc);
 
+-- The ~11 distinct semesters on record, newest first — the upload form's dropdown (UC1).
+--
+-- PostgREST has no DISTINCT, so without this the repository reads the whole `semester` column and
+-- deduplicates in Python, paging to get past the silent 1,000-row response cap: ~23 round trips
+-- over ~22,892 rows to learn about ten strings. The scan was never the cost; the wire was.
+--
+-- The repository FALLS BACK to that paged scan when this function is absent (PGRST202), so a
+-- project that has not run migrations/2026-08-14_distinct_semesters.sql still works — just
+-- slowly. See LearnerSittingRepository.distinct_semesters.
+create or replace function distinct_semesters()
+returns table (semester text)
+language sql
+stable
+as $$
+  -- Alias required: bare `semester` is ambiguous against the OUT column of the same name.
+  select distinct ls.semester
+  from learner_sittings ls
+  where ls.semester is not null
+  order by 1 desc;
+$$;
+
 -- One row per k-means fit — the cohort model plus one per band group — so the dashboard can
 -- show how each k was chosen and compare the two scopes.
 create table if not exists clustering_runs (

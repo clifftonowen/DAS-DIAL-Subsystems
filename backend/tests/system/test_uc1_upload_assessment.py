@@ -115,10 +115,19 @@ def open_upload_form(driver, base_url, timeout=30):
 
     THE WAIT ON THE LAST LINE IS LOAD-BEARING; every failure of this file's first CI run was its
     absence. The modal renders the instant it opens, but the rubric and the semester list arrive
-    from two API calls behind one `Promise.all` in UploadView, and `/assessments/semesters` pages
-    the whole `learner_sittings` table (~23 round trips, ~2s from a laptop and slower from a
-    runner). Until both land, `metricSpecs` is `[]`, and the form is in a DIFFERENT STATE than
-    the one under test:
+    from two API calls behind one `Promise.all` in UploadView. Until both land, `metricSpecs` is
+    `[]`, and the form is in a DIFFERENT STATE than the one under test:
+
+    `/assessments/semesters` USED TO BE the slow half — it paged the whole `learner_sittings`
+    table to deduplicate one column, ~23 round trips, ~2s from a laptop and worse from a runner.
+    It is one request now, against the `distinct_semesters()` Postgres function
+    (infra/migrations/2026-08-14_distinct_semesters.sql).
+
+    `timeout` STAYS AT 30 BECAUSE OF THAT, not in spite of it. The migration removes the largest
+    known contributor to this wait, so raising the budget now would only buy silence: a wait that
+    starts failing at 30s afterwards is telling you something regressed, and 60s would hide it for
+    another few seconds rather than answer it. A project that has not run the migration still
+    takes the old paged path, which is what the 30s is there to absorb.
 
       * labels read `phonics_score`, not "Phonics"
       * the hint reads "Valid range: 0–…", so ST-1.3's ceiling message does not exist yet

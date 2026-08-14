@@ -39,7 +39,13 @@ class AssessmentService:
         return parse_assessment_report(file, learner_id)
 
     def list_semesters(self) -> list[str]:
-        """Semesters the upload form offers — those on record plus the next two."""
+        """Semesters the upload form offers — those on record plus the next two.
+
+        NOTHING CATCHES ABOVE THIS. It is one half of UploadView's `Promise.all`, so an exception
+        here does not degrade the form, it kills it: the rejection leaves `metricSpecs` empty and
+        `handleSubmit` bails on its `!semester` guard. That is why the repository falls back to a
+        paged scan when the `distinct_semesters()` function is absent rather than propagating.
+        """
         return option_list(self.sittings.distinct_semesters())
 
     def confirm_and_save(self, payload: AssessmentConfirmRequest) -> dict:

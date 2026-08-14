@@ -42,6 +42,11 @@ fake = fake_supabase(
 fake.queries_on("users")      # [(table, op), …] — prove an edge was NOT taken
 ```
 
+`missing_rpcs={"distinct_semesters"}` makes that Postgres function raise **PGRST202**, modelling a
+project whose migrations are behind. The call is still logged, so a test can prove the fast path
+was attempted before the caller fell back — the only thing distinguishing the two paths, since
+both return the same list (UT-2.74 – UT-2.76).
+
 `sign_up` / `sign_in_with_password` raise the **real** gotrue exception classes, and the
 one live Supabase raises for each case — a weak password is `AuthWeakPasswordError`,
 which is *not* an `AuthApiError`. `AuthGateway` therefore catches gotrue's base
@@ -243,6 +248,7 @@ it, so surviving plan rows stay valid and the plan needs only appending.
 | AB2.22 | `ProfilingService.generate_profile` | UT-2.61, UT-2.62 | `unit/test_profiling_service.py` |
 | AB2.23 | `ProfilingService.list_sittings` | UT-2.63 | `unit/test_profiling_service.py` |
 | AB2.24 | `LearnerSittingRepository` | UT-2.64, UT-2.65 | `unit/test_learner_sitting_repository.py` |
+| AB2.28 | `LearnerSittingRepository.distinct_semesters` | UT-2.74 – UT-2.76 | `unit/test_learner_sitting_repository.py` |
 | AB2.25 | `ScoreHistoryChart.jsx` (React) | UT-2.66 – UT-2.70 | `frontend/src/components/__tests__/ScoreHistoryChart.test.jsx` |
 | AB2.26 | `dial_workbook.latest_per_semester` | UT-2.71, UT-2.72 | `unit/test_dial_workbook.py` |
 | AB2.27 | `tests.support.fake_supabase` contract | UT-2.73 | `unit/test_fake_supabase_contract.py` |

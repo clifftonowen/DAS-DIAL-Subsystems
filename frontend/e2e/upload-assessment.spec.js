@@ -32,6 +32,21 @@ test.skip(
 const REPORT_DOCX = fileURLToPath(new URL("./fixtures/report.docx", import.meta.url));
 
 /**
+ * The preview card's VALUE cell for one metric, located through its label.
+ *
+ * Each metric renders as a `<div>` holding a label `<p>` and then a value `<p>`
+ * (UploadView.jsx:311-322), and the values are not unique — three of them read "Not assessed" in
+ * this test. Matching the label exactly and stepping to its sibling is what makes an assertion
+ * about ONE metric possible; matching the value text alone cannot distinguish them.
+ *
+ * Labels come from the served rubric (`FEATURE_LABELS` in dial_features.py): Phonics, Word
+ * Reading, Word Spelling, Writing. Before that lands the labels are raw keys, which is exactly
+ * the not-ready state `openUploadForm` waits out.
+ */
+const previewValue = (page, label) =>
+  page.getByText(label, { exact: true }).locator("xpath=following-sibling::p[1]");
+
+/**
  * From the learners list to the upload modal, with its SERVED METADATA already in.
  *
  * The waits here are load-bearing, and they guard the same trap the Selenium suite documents at
@@ -95,13 +110,20 @@ test.describe("UC1 Upload Assessment Data", () => {
 
     await page.getByRole("button", { name: "Parse report" }).click();
 
-    // The preview card echoes what WOULD be stored, including the distinction blank carries. The
-    // "Confirm & save" button being present is the proof the parse succeeded; clicking it is what
-    // this tier deliberately does not do (see the file header).
+    // The preview card echoes what WOULD be stored. "Confirm & save" being present is the proof
+    // the parse succeeded; clicking it is what this tier deliberately does not do (see the header).
     await expect(page.getByRole("button", { name: "Confirm & save" })).toBeVisible({
       timeout: 20_000,
     });
-    await expect(page.getByText("Not assessed")).toBeVisible();
+
+    // THE BLANK-VERSUS-ZERO DISTINCTION, asserted per metric rather than by matching loose text.
+    // A bare getByText("Not assessed") is a strict-mode violation here: three of the four metrics
+    // were left blank, so it resolves to three nodes and fails without ever testing anything. It
+    // would also pass if the WRONG metric were the unassessed one, which is the case that matters —
+    // a blank writing mark rendered as 0 would rank as this learner's weakest skill and steer UC3
+    // at a paper band A never sits.
+    await expect(previewValue(page, "Writing")).toHaveText("Not assessed");
+    await expect(previewValue(page, "Phonics")).toHaveText("30");
   });
 
   test("a corrupted file is rejected with an error and nothing is stored", async ({ page }) => {

@@ -14,7 +14,14 @@ import { EMAIL, PASSWORD, openLearner } from "./_helpers.js";
 
 // The review box only renders under an activity (LearnerDetailPage.jsx:377), so this needs the
 // same learner UC7 uses: one that already HAS a generated activity.
-const REVIEW_LEARNER_ID = process.env.TEST_SHARE_LEARNER_ID || process.env.TEST_LEARNER_ID;
+//
+// NO FALLBACK TO TEST_LEARNER_ID. It used to read
+// `TEST_SHARE_LEARNER_ID || TEST_LEARNER_ID`, and that is precisely how these two tests failed
+// their first CI run: TEST_SHARE_LEARNER_ID was unset, so they silently retargeted the UC2 learner
+// — who has marks but no generated activity — and spent 20s waiting for a #review-text that was
+// never going to render. A missing secret has to SKIP. Substituting a learner who cannot satisfy
+// the precondition turns a configuration gap into a red build that looks like a UC4 bug.
+const REVIEW_LEARNER_ID = process.env.TEST_SHARE_LEARNER_ID;
 
 test.skip(
   !EMAIL || !PASSWORD,
@@ -25,7 +32,7 @@ test.describe("UC4 Review Learning Activity", () => {
   test("a submitted review survives a page reload", async ({ page }) => {
     test.skip(
       !REVIEW_LEARNER_ID,
-      "set TEST_SHARE_LEARNER_ID (or TEST_LEARNER_ID) to a learner with a generated activity",
+      "set TEST_SHARE_LEARNER_ID to a learner that already has a generated activity",
     );
 
     await openLearner(page, REVIEW_LEARNER_ID);
@@ -54,7 +61,7 @@ test.describe("UC4 Review Learning Activity", () => {
   });
 
   test("an empty review cannot be submitted", async ({ page }) => {
-    test.skip(!REVIEW_LEARNER_ID, "set TEST_SHARE_LEARNER_ID (or TEST_LEARNER_ID)");
+    test.skip(!REVIEW_LEARNER_ID, "set TEST_SHARE_LEARNER_ID");
 
     await openLearner(page, REVIEW_LEARNER_ID);
     await expect(page.locator("#review-text")).toBeVisible({ timeout: 20_000 });

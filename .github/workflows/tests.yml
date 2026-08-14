@@ -271,6 +271,18 @@ jobs:
           path: test-artifacts/
           if-no-files-found: ignore
 
+      # THE SCREENSHOT SHOWS THE SYMPTOM, THIS SHOWS THE CAUSE. A browser test fails as a blank
+      # dropdown or a stuck spinner, which is the same picture whether the API 500'd, timed out, or
+      # was never called. Without the server's own log there is nothing to tell those apart after
+      # the runner is gone, and the whole job has to be re-run blind to learn anything.
+      - name: Upload backend log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-backend-log
+          path: backend/backend.log
+          if-no-files-found: ignore
+
   # ------------------------------------------------------------- frontend-e2e
   # Playwright against the real built UI. Same pyramid level as `system` (a browser driving a
   # running app), so it gates on the same hermetic tiers and shares the Supabase group.
@@ -394,4 +406,14 @@ jobs:
         with:
           name: playwright-report
           path: frontend/playwright-report/
+          if-no-files-found: ignore
+
+      # Same reasoning as the `system` job: the trace shows what the browser saw, this shows what
+      # the API did. Playwright's own trace cannot distinguish a slow endpoint from a broken one.
+      - name: Upload backend log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-e2e-backend-log
+          path: backend/backend.log
           if-no-files-found: ignore

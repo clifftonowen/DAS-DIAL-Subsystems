@@ -14,6 +14,7 @@
 // the tier that can clean up after itself.
 //
 // Requires the app running (backend :8000, built frontend :4173) and TEST-project credentials.
+import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { EMAIL, PASSWORD, logIn } from "./_helpers.js";
 
@@ -22,16 +23,13 @@ test.skip(
   "set TEST_THERAPIST_EMAIL and TEST_THERAPIST_PASSWORD (Supabase TEST project, never production)",
 );
 
-// A minimal assessment report. The parser reads plain paragraphs, and a .txt upload is enough to
-// exercise the invalid-format branch without needing python-docx to build a real document.
-const REPORT_TEXT = [
-  "Assessment Date: 2026-07-24",
-  "Phoneme Segmentation 7 10",
-  "Confidence Score: 0.6",
-  "Risk Score: 0.4",
-  "Strengths: blending",
-  "Weaknesses: segmentation",
-].join("\n");
+// A REAL .docx ON DISK, not a buffer built here. `validate_format` checks the EXTENSION and accepts
+// only .pdf/.docx (assessment_parser.py:38), and `_extract_text` then opens a .docx as a zip
+// archive — so a text buffer named report.txt is rejected before parsing, and one named report.docx
+// blows up inside it. Neither reaches the preview this test is about. The fixture is a genuine
+// python-docx document holding the same paragraphs the Selenium suite builds at runtime; it is
+// committed rather than generated because Node has no zip writer in its standard library.
+const REPORT_DOCX = fileURLToPath(new URL("./fixtures/report.docx", import.meta.url));
 
 /**
  * From the learners list to the upload modal, with its SERVED METADATA already in.
@@ -93,11 +91,7 @@ test.describe("UC1 Upload Assessment Data", () => {
     // Writing is left BLANK on purpose: band A never sits that paper, and blank has to mean "not
     // assessed" rather than a mark of zero — a zero would rank as the learner's weakest skill and
     // steer UC3 at a paper they never took.
-    await page.setInputFiles("#upload-file", {
-      name: "report.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from(REPORT_TEXT),
-    });
+    await page.setInputFiles("#upload-file", REPORT_DOCX);
 
     await page.getByRole("button", { name: "Parse report" }).click();
 

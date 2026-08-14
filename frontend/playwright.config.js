@@ -19,6 +19,13 @@ export default defineConfig({
   // Fail the run if a spec was committed with `test.only` left in it.
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // On CI, emit a machine-readable summary alongside the human ones. The `frontend-e2e` job reads
+  // its `stats` block to fail a run in which NOTHING executed — `playwright test` exits 0 when
+  // every spec is skipped, so without that check a green job reads as browser coverage it does not
+  // have. See the "Fail if no browser tests actually ran" step in .github/workflows/tests.yml.
+  reporter: process.env.CI
+    ? [["list"], ["html", { open: "never" }], ["json", { outputFile: "playwright-results.json" }]]
+    : [["list"]],
   use: {
     baseURL: process.env.FRONTEND_URL || "http://127.0.0.1:4173",
     trace: "on-first-retry",          // trace viewer on flaky retries

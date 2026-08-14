@@ -56,11 +56,11 @@ const previewValue = (page, label) =>
  * so a click on "Parse report" silently does nothing and the failure surfaces several steps from
  * its cause.
  *
- * GET /assessments/semesters used to be the slow half of that Promise.all — ~23 paged round trips
- * to deduplicate one column — until it moved onto the `distinct_semesters()` Postgres function
- * (infra/migrations/2026-08-14_distinct_semesters.sql). It is one request now, so these waits
- * should resolve almost immediately; they are kept because "almost" is not "always", and because
- * a project that has not run the migration still takes the old paged path.
+ * GET /assessments/semesters is the slow half of that Promise.all — ~23 paged round trips to
+ * deduplicate one column. The backend prefers a `distinct_semesters()` Postgres function that does
+ * it in one (infra/migrations/2026-08-14_distinct_semesters.sql), but THAT MIGRATION HAS NOT BEEN
+ * RUN ON THE TEST PROJECT — every CI run logs the "function missing" fallback — so the paged path
+ * is what these waits are actually absorbing.
  */
 async function openUploadForm(page) {
   await logIn(page);

@@ -540,25 +540,60 @@ def _rpc_hybrid_match_curriculum(store, params):
     ]
 
 
+def _rpc_distinct_semesters(store, params):
+    """`select distinct ls.semester from learner_sittings ls ... order by 1 desc`.
+
+    Returns row dicts keyed `semester`, because the SQL is `returns table (semester text)` and a
+    caller reading `row["semester"]` must fail here if that ever becomes a bare scalar set.
+    """
+    seen = {
+        row["semester"]
+        for row in store.get("learner_sittings", [])
+        if row.get("semester")
+    }
+    return [{"semester": s} for s in sorted(seen, reverse=True)]
+
+
 _RPC_HANDLERS = {
     "match_curriculum": _rpc_match_curriculum,
     "hybrid_match_curriculum": _rpc_hybrid_match_curriculum,
+    "distinct_semesters": _rpc_distinct_semesters,
 }
+
+
+class FakeAPIError(Exception):
+    """PostgREST's APIError, as far as anything in this codebase reads it: a `.code`.
+
+    Exists so a test can model a project whose migrations are behind — `missing_rpcs` raises this
+    with PGRST202, which is what the real driver returns for a function that does not exist.
+    """
+
+    def __init__(self, code, message):
+        super().__init__(f"{code}: {message}")
+        self.code = code
 
 
 class _RpcCall:
     """Mirrors `get_supabase().rpc(name, params)` — terminal `.execute().data`, like _Query."""
 
-    def __init__(self, store, name, params, log):
+    def __init__(self, store, name, params, log, missing_rpcs=()):
         self._store = store
         self._name = name
         self._params = params or {}
         self._log = log
+        self._missing_rpcs = missing_rpcs
 
     def execute(self):
         # Logged as (name, "rpc") so a test can assert an RPC edge was (or was not) taken, the
         # same way queries_on() works for table round trips.
         self._log.append((self._name, "rpc"))
+        if self._name in self._missing_rpcs:
+            # A project whose migrations are behind. Raised AFTER logging, so a test can still
+            # prove the call was attempted before the caller fell back.
+            raise FakeAPIError(
+                "PGRST202",
+                f"Could not find the function public.{self._name} in the schema cache",
+            )
         handler = _RPC_HANDLERS.get(self._name)
         if handler is None:
             # An unmodelled RPC must not return an empty list and pass silently — that hides a
@@ -577,14 +612,18 @@ class FakeSupabase:
             fake Authentication Service accepts.
         confirm_email: when True, `sign_up` returns a user with no session,
             modelling a project that has email confirmation enabled.
+        missing_rpcs: RPC names that should raise PGRST202 instead of running, modelling a
+            project whose migrations are behind. The call is still logged, so a test can
+            prove it was attempted before the caller fell back.
 
     RPC: `.rpc(name, params)` models the curriculum retrieval functions (match_curriculum,
-    hybrid_match_curriculum) — metadata filters honoured, ranking by the seeded `similarity`.
-    See the module note above _RpcCall.
+    hybrid_match_curriculum) and `distinct_semesters` — metadata filters honoured, ranking by the
+    seeded `similarity`. See the module note above _RpcCall.
     """
 
     def __init__(self, seed=None, user_id="test-therapist-id",
-                 auth_users=None, confirm_email=False, fail_on_execute=None):
+                 auth_users=None, confirm_email=False, fail_on_execute=None,
+                 missing_rpcs=()):
         # Deep-ish copy so tests don't leak state between cases.
         self.store = {k: [dict(r) for r in v] for k, v in (seed or {}).items()}
         self.auth = _Auth(user_id, auth_users=auth_users, confirm_email=confirm_email)
@@ -592,13 +631,15 @@ class FakeSupabase:
         # was never taken. See `queries_on()`.
         self.queries = []
         self._fail_on_execute = fail_on_execute
+        self._missing_rpcs = frozenset(missing_rpcs)
 
     def table(self, name):
         return _Query(self.store, name, log=self.queries,
                       fail_on_execute=self._fail_on_execute)
 
     def rpc(self, name, params=None):
-        return _RpcCall(self.store, name, params, log=self.queries)
+        return _RpcCall(self.store, name, params, log=self.queries,
+                        missing_rpcs=self._missing_rpcs)
 
     def queries_on(self, table):
         """The round trips made against one table, for interaction assertions."""

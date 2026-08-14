@@ -92,6 +92,77 @@ def test_latest_is_none_when_there_are_no_sittings(fake_supabase):
     assert LearnerSittingRepository().latest_for_learner(LEARNER) is None
 
 
+# ── distinct_semesters — the upload form's dropdown (UC1) ────────────────────
+# These three exist because the method was refactored from a ~23-round-trip paged scan onto a
+# Postgres function, and nothing pinned its behaviour before that. The RETURN VALUE is identical
+# either way, so every test here also asserts WHICH PATH RAN — without that, a silently permanent
+# fallback would look exactly like the fix working.
+def test_ut_2_74_semesters_come_from_the_rpc_newest_first(fake_supabase):
+    """UT-2.74: one round trip, deduplicated server-side, newest first.
+
+    Newest-first is not cosmetic: `semesters.option_list` takes the first entry as the upload
+    form's DEFAULT, and it walks forward from `max(valid)` to build the lookahead. Reverse the
+    order and the form defaults to the oldest semester on record.
+    """
+    fake = fake_supabase(seed={"learner_sittings": [
+        sitting(LEARNER, "2024 Sem 2"),
+        sitting(OTHER, "2026 Sem 1"),
+        sitting(OTHER, "2024 Sem 2"),      # the duplicate the DISTINCT has to collapse
+        sitting(LEARNER, "2022 Sem 1"),
+    ]})
+
+    assert LearnerSittingRepository().distinct_semesters() == [
+        "2026 Sem 1", "2024 Sem 2", "2022 Sem 1",
+    ]
+    assert ("distinct_semesters", "rpc") in fake.queries
+    assert fake.queries_on("learner_sittings") == [], "the RPC replaces the paged scan entirely"
+
+
+def test_ut_2_75_a_missing_migration_falls_back_to_the_paged_scan(fake_supabase):
+    """UT-2.75: a project that has not run the migration still gets a working upload form.
+
+    THE FALLBACK IS NOT POLITENESS. Nothing upstream of this catches — unlike the curriculum RPCs,
+    whose service swallows everything into an empty result. A PGRST202 here would surface from
+    GET /assessments/semesters, reject UploadView's `Promise.all`, and leave the therapist with a
+    form whose semester select is empty and whose submit bails on its `!semester` guard. UC1 would
+    be dead on every checkout that had not run the SQL.
+    """
+    fake = fake_supabase(
+        seed={"learner_sittings": [sitting(semester="2026 Sem 1"), sitting(OTHER, "2022 Sem 1")]},
+        missing_rpcs={"distinct_semesters"},
+    )
+
+    assert LearnerSittingRepository().distinct_semesters() == ["2026 Sem 1", "2022 Sem 1"]
+    # The RPC was ATTEMPTED and then given up on — proving the fallback is reached by failure
+    # rather than by the fast path never being tried.
+    assert ("distinct_semesters", "rpc") in fake.queries
+    assert fake.queries_on("learner_sittings"), "the fallback must actually read the table"
+
+
+def test_ut_2_76_a_real_outage_is_not_mistaken_for_a_missing_migration(fake_supabase):
+    """UT-2.76: only PGRST202 falls back. Anything else propagates.
+
+    The guard is narrow on purpose. A blanket `except` would turn every database failure into a
+    22,892-row paged scan — reinstating the exact cost this change removes, and doing it silently,
+    so nobody would learn the fast path had stopped being taken.
+    """
+    fake_supabase(seed={"learner_sittings": [sitting()]})
+
+    import app.core.supabase_client as sc
+
+    class _Boom:
+        def rpc(self, *a, **kw):
+            raise ConnectionError("connection refused")
+
+    original = sc.get_supabase
+    sc.get_supabase = lambda: _Boom()
+    try:
+        with pytest.raises(ConnectionError):
+            LearnerSittingRepository().distinct_semesters()
+    finally:
+        sc.get_supabase = original
+
+
 # ── writes ────────────────────────────────────────────────────────────────────
 def test_upsert_conflicts_on_learner_and_semester(fake_supabase):
     """UT-2.65: THE KEY THAT STOPS THE CHART DUPLICATING.

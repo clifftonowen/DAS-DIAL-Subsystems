@@ -42,6 +42,11 @@ fake = fake_supabase(
 fake.queries_on("users")      # [(table, op), …] — prove an edge was NOT taken
 ```
 
+`missing_rpcs={"distinct_semesters"}` makes that Postgres function raise **PGRST202**, modelling a
+project whose migrations are behind. The call is still logged, so a test can prove the fast path
+was attempted before the caller fell back — the only thing distinguishing the two paths, since
+both return the same list (UT-2.74 – UT-2.76).
+
 `sign_up` / `sign_in_with_password` raise the **real** gotrue exception classes, and the
 one live Supabase raises for each case — a weak password is `AuthWeakPasswordError`,
 which is *not* an `AuthApiError`. `AuthGateway` therefore catches gotrue's base
@@ -243,6 +248,7 @@ it, so surviving plan rows stay valid and the plan needs only appending.
 | AB2.22 | `ProfilingService.generate_profile` | UT-2.61, UT-2.62 | `unit/test_profiling_service.py` |
 | AB2.23 | `ProfilingService.list_sittings` | UT-2.63 | `unit/test_profiling_service.py` |
 | AB2.24 | `LearnerSittingRepository` | UT-2.64, UT-2.65 | `unit/test_learner_sitting_repository.py` |
+| AB2.28 | `LearnerSittingRepository.distinct_semesters` | UT-2.74 – UT-2.76 | `unit/test_learner_sitting_repository.py` |
 | AB2.25 | `ScoreHistoryChart.jsx` (React) | UT-2.66 – UT-2.70 | `frontend/src/components/__tests__/ScoreHistoryChart.test.jsx` |
 | AB2.26 | `dial_workbook.latest_per_semester` | UT-2.71, UT-2.72 | `unit/test_dial_workbook.py` |
 | AB2.27 | `tests.support.fake_supabase` contract | UT-2.73 | `unit/test_fake_supabase_contract.py` |
@@ -266,15 +272,20 @@ the sorted label list, so deriving them from the *filtered* rows would renumber 
 every filter change and repaint the whole plot. `Graph.jsx` builds its `palette` from the
 unfiltered rows to prevent exactly that, and this test is what holds it in place.
 
-### Not yet implemented
+### The browser and end-to-end tiers
 
-**ST-2.1 – ST-2.4** (Selenium, browser UI) and the UC2 **end-to-end** flow. Both are Week 13
-items in the plan. Verified absent: no `ST-2.x` string appears in any `.py` file.
+**ST-2.1 and ST-2.2 are implemented** in `system/test_uc2_generate_profile.py`, with a Playwright
+counterpart in `frontend/e2e/generate-profile.spec.js`. ST-2.1 is the happy path; ST-2.2 is the
+no-scores branch, which the page turns into UC1's upload modal rather than an error.
 
-Note that only two of the plan's four ST-2 branches are still reachable, because UC2 now has
-two failure modes rather than four (see the error table below). ST-2.1 is the happy path and
-ST-2.2 is the no-scores branch; ST-2.3 and ST-2.4 were written against `NoPatternError` and
-`ProfileGenerationError`, which no longer exist.
+**ST-2.3 and ST-2.4 will not be implemented.** Only two of the plan's four ST-2 branches are
+reachable, because UC2 now has two failure modes rather than four (see the error table below):
+3 and 4 were written against `NoPatternError` and `ProfileGenerationError`, which no longer exist.
+Do not re-add them from the PDF — there is no code path that raises them.
+
+The UC2 **end-to-end** flow is `e2e/test_uc_generate_profile.py`: the happy path (promotion returns
+200 with the learner's id) and alt flow 2a (no sittings -> 409). Its alt branches 6.2/7.2 and
+6.3/7.3 are void for the same reason as ST-2.3/2.4.
 
 ### Error types UC2 actually raises
 
@@ -302,6 +313,37 @@ well-formed; the resource is just not in a state that can satisfy it yet. `Learn
 keys its inline "upload an assessment" prompt off exactly this status, so collapsing it into 404
 (which also means "no such learner") would leave the UI unable to tell the two apart. This is
 also the status UC1 exists to stop the therapist ever seeing.
+
+---
+
+## UC3 traceability — Generate Adaptive Learning Activity
+
+Most of UC3 carries its plan IDs in docstrings the usual way (`unit/test_uc3_activity_graph.py`
+holds UT-3.3 – UT-3.9). Six plan IDs do **not** appear anywhere, and all six are covered — just at
+a different tier or under a different number. Mapped here so a reader tracing the PM3 plan does not
+conclude the tier is missing.
+
+| Plan ID | What the plan named | Covered by |
+|---------|---------------------|------------|
+| UT-3.1 | `ActivityGenerationService.generateActivity` (valid) | `unit/test_activity_generation_service.py` — `build_query` and what `generate` persists |
+| UT-3.2 | best flagged attempt returned | **IT-3.9** (`integration/test_uc3_generate_activity.py`) — the loop that produces a best attempt is not reachable from the service's own unit |
+| UT-3.10 | `ActivityRepository` persists a VALIDATED activity | `unit/test_activity_generation_service.py` (the saved-row group), **IT-3.8** |
+| UT-3.11 | `ActivityRepository` persists a FLAGGED activity | **IT-3.9, IT-3.10** |
+| UT-3.12 | controller displays a validated activity | **IT-3.11** (`frontend/src/views/__integration__/LearnerDetailPage.uc3.integration.test.jsx`) |
+| UT-3.13 | controller displays a flagged activity | **IT-3.12** (same file) |
+
+**IT-3.2 and IT-3.3 do not mean what the plan says.** `integration/test_uc3_generate_activity.py`
+gave those two numbers to its guardrail cases, which were written first, and the plan's retry-loop
+pair continues the sequence as **IT-3.8 / IT-3.9** rather than renumbering passing tests — the same
+convention UC2's clustering IDs used. Follow the plan IDs and you land on the guardrails.
+
+**ST-3.3 and ST-3.4 are not implemented, deliberately.** Both are claims about the validate loop
+(reprompt-then-succeed; FLAGGED at max_retries), and driving either needs a `ValidativeAgent` whose
+verdict the test controls. The only seam for that is `LLMApiClient.use_provider(...)`, which is
+in-process; the system tier drives a separate backend over HTTP and cannot reach it, so the verdict
+would come from a real model and the test would pass or fail on the model's mood. The behaviour is
+pinned at the tiers that can control it: UT-3.4 / UT-3.5 and IT-3.8 / IT-3.9. See the docstring in
+`system/test_uc3_generate_activity.py`.
 
 ---
 

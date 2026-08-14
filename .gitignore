@@ -50,3 +50,10 @@ backend/fuzz/findings/*.err
 # The findings THEMSELVES stay tracked: the JSON summaries and the minimised reproducing
 # inputs beside them are the evidence behind docs/PM_Robustness_Testing.md, and a defect
 # report nobody else can replay is not a defect report.
+
+# Playwright run output. The HTML report and traces are per-run artifacts (CI uploads them on
+# failure), and playwright-results.json is the JSON reporter's summary that the frontend-e2e
+# job reads to detect an all-skipped run. All three are regenerable — noise in a diff.
+frontend/playwright-report/
+frontend/playwright-results.json
+frontend/test-results/

@@ -29,7 +29,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from tests.system._helpers import login
+from tests.system._helpers import login, require_endpoints
 
 pytestmark = pytest.mark.system
 
@@ -110,15 +110,29 @@ def uploaded_sitting(supabase_env):
             pass
 
 
-def open_upload_form(driver, base_url, timeout=30):
+def open_upload_form(driver, base_url, creds, timeout=30):
     """From the learners list to the upload modal, with its SERVED METADATA already in.
+
+    `creds` is only for the PRE-CHECK on the first line. The two endpoints this form depends on
+    are called directly before the browser is touched, so an API-side failure fails here, named,
+    instead of surfacing 30 seconds later as "the served rubric never arrived" — which is a guess.
+    See `require_endpoints` for the CI run that made this worth the extra round trip.
 
     THE WAIT ON THE LAST LINE IS LOAD-BEARING; every failure of this file's first CI run was its
     absence. The modal renders the instant it opens, but the rubric and the semester list arrive
-    from two API calls behind one `Promise.all` in UploadView, and `/assessments/semesters` pages
-    the whole `learner_sittings` table (~23 round trips, ~2s from a laptop and slower from a
-    runner). Until both land, `metricSpecs` is `[]`, and the form is in a DIFFERENT STATE than
-    the one under test:
+    from two API calls behind one `Promise.all` in UploadView. Until both land, `metricSpecs` is
+    `[]`, and the form is in a DIFFERENT STATE than the one under test:
+
+    `/assessments/semesters` IS the slow half — it pages the whole `learner_sittings` table to
+    deduplicate one column, ~23 round trips, ~2s from a laptop and worse from a runner. The code
+    prefers a `distinct_semesters()` Postgres function that does it in one
+    (infra/migrations/2026-08-14_distinct_semesters.sql), BUT THAT MIGRATION HAS NOT BEEN RUN ON
+    THE TEST PROJECT: every CI run so far logs "Postgres function missing, falling back to a paged
+    scan" on each call. Until someone runs it, this is 23 requests, not one.
+
+    `timeout` STAYS AT 30 BECAUSE OF THAT. Raising the budget would only buy silence: once the
+    migration lands, a wait that still fails at 30s is telling you something regressed, and 60s
+    would hide it for another few seconds rather than answer it.
 
       * labels read `phonics_score`, not "Phonics"
       * the hint reads "Valid range: 0–…", so ST-1.3's ceiling message does not exist yet
@@ -133,6 +147,10 @@ def open_upload_form(driver, base_url, timeout=30):
     rubric change would express itself as four 30-second timeouts instead of one clear assertion
     failure in ST-1.3, which is where the number actually belongs.
     """
+    require_endpoints(
+        creds["email"], creds["password"], "/assessments/metrics", "/assessments/semesters",
+    )
+
     wait = WebDriverWait(driver, timeout)
     driver.get(f"{base_url}/learners")
     wait.until(EC.element_to_be_clickable((By.XPATH, UPLOAD_BUTTON))).click()
@@ -212,7 +230,7 @@ def test_st_1_1_therapist_uploads_an_assessment(
 ):
     """A valid file is parsed, previewed, confirmed and stored."""
     login(driver, frontend_url, system_creds["email"], system_creds["password"])
-    wait = open_upload_form(driver, frontend_url)
+    wait = open_upload_form(driver, frontend_url, system_creds)
 
     select_semester(driver, wait, uploaded_sitting)
     driver.find_element(By.ID, "upload-phonics_score").send_keys("30")
@@ -240,7 +258,7 @@ def test_st_1_1b_the_upload_reaches_the_learners_profile(
     scores on record" despite the upload having succeeded.
     """
     login(driver, frontend_url, system_creds["email"], system_creds["password"])
-    wait = open_upload_form(driver, frontend_url)
+    wait = open_upload_form(driver, frontend_url, system_creds)
 
     semester = select_semester(driver, wait, uploaded_sitting)
     driver.find_element(By.ID, "upload-phonics_score").send_keys("30")
@@ -268,7 +286,7 @@ def test_st_1_2_a_corrupted_file_is_reported_and_stores_nothing(
 ):
     """The extension passes, the content does not — the therapist sees why, and no row is made."""
     login(driver, frontend_url, system_creds["email"], system_creds["password"])
-    wait = open_upload_form(driver, frontend_url)
+    wait = open_upload_form(driver, frontend_url, system_creds)
 
     select_semester(driver, wait)
     driver.find_element(By.ID, "upload-phonics_score").send_keys("30")
@@ -298,7 +316,7 @@ def test_st_1_3_an_out_of_range_mark_blocks_the_upload(
     after a round trip — but the API enforces the same ceiling, from the same served number.
     """
     login(driver, frontend_url, system_creds["email"], system_creds["password"])
-    wait = open_upload_form(driver, frontend_url)
+    wait = open_upload_form(driver, frontend_url, system_creds)
 
     select_semester(driver, wait)
     driver.find_element(By.ID, "upload-phonics_score").send_keys("51")   # ceiling is 50

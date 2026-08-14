@@ -1,23 +1,133 @@
-// FRONTEND E2E — Playwright. UC1 Upload Assessment Data (PLACEHOLDER).
+// FRONTEND E2E — Playwright. UC1 Upload Assessment Data.
 //
-// Browser-driven counterpart to the Selenium `system` tests / pytest `e2e` tier. NOT YET
-// IMPLEMENTED — scaffolded so the Playwright tier shows a slot per use case. Fill in the steps
-// and remove `.skip` on the describe block to activate.
+// The Playwright counterpart to backend/tests/system/test_uc1_upload_assessment.py (ST-1.1 - 1.3).
+// See ./README.md on tier overlap.
+//
+// THIS SPEC STOPS AT THE PREVIEW AND NEVER CLICKS "Confirm & save". That is deliberate, and it is
+// the one place this tier must NOT mirror the Selenium suite. Confirming writes a learner_sittings
+// row, and the form only offers LOOKAHEAD semesters (on-record plus the next two), so a saved row
+// is permanently that learner's NEWEST sitting. UC2 promotes the newest sitting — so an
+// unreclaimed row here would silently change what UC2's tests read, in both suites, forever after.
+// The Selenium suite can confirm because it has an `uploaded_sitting` fixture that deletes the row
+// it created (test_uc1_upload_assessment.py:86-110). Playwright has no Supabase teardown here, so
+// it covers steps 1-3 of the operational flow (prompt, fill, parse) and leaves step 4 (store) to
+// the tier that can clean up after itself.
 //
 // Requires the app running (backend :8000, built frontend :4173) and TEST-project credentials.
 import { expect, test } from "@playwright/test";
+import { EMAIL, PASSWORD, logIn } from "./_helpers.js";
 
-const EMAIL = process.env.TEST_THERAPIST_EMAIL;
-const PASSWORD = process.env.TEST_THERAPIST_PASSWORD;
+test.skip(
+  !EMAIL || !PASSWORD,
+  "set TEST_THERAPIST_EMAIL and TEST_THERAPIST_PASSWORD (Supabase TEST project, never production)",
+);
 
-test.describe.skip("UC1 Upload Assessment Data", () => {
-  test("therapist uploads a valid assessment file and it is stored", async ({ page }) => {
-    // TODO:
-    // 1. logIn(page)  — #email / #password / "Log in" button
-    // 2. navigate to the learner / upload UI (e.g. /learners/${TEST_LEARNER_ID})
-    // 3. set the file input to a valid assessment fixture (page.setInputFiles(...))
-    // 4. click Upload
-    // 5. expect a success message, and the assessment/preview to render
-    expect(EMAIL && PASSWORD).toBeTruthy();
+// A minimal assessment report. The parser reads plain paragraphs, and a .txt upload is enough to
+// exercise the invalid-format branch without needing python-docx to build a real document.
+const REPORT_TEXT = [
+  "Assessment Date: 2026-07-24",
+  "Phoneme Segmentation 7 10",
+  "Confidence Score: 0.6",
+  "Risk Score: 0.4",
+  "Strengths: blending",
+  "Weaknesses: segmentation",
+].join("\n");
+
+/**
+ * From the learners list to the upload modal, with its SERVED METADATA already in.
+ *
+ * The waits here are load-bearing, and they guard the same trap the Selenium suite documents at
+ * length. The modal renders instantly, but the rubric and the semester list arrive from two API
+ * calls behind one Promise.all. Until both land the metric inputs do not exist, the semester
+ * select holds only a "Loading…" placeholder, and handleSubmit bails on its `!semester` guard —
+ * so a click on "Parse report" silently does nothing and the failure surfaces several steps from
+ * its cause.
+ */
+async function openUploadForm(page) {
+  await logIn(page);
+  await page.goto("/learners");
+  await page.getByRole("button", { name: "Upload Assessment" }).click();
+
+  await expect(page.locator("#upload-file")).toBeVisible();
+
+  // BOTH WAITS BELOW ARE POSITIVE EXISTENCE CHECKS, ON PURPOSE. The obvious translation of the
+  // Selenium version is a negated assertion on the rubric hint ("no longer says 0–…"), and it is
+  // silently useless here: before the rubric lands the metric inputs are not rendered AT ALL, and
+  // `expect(missing).not.toContainText(...)` resolves immediately rather than waiting. The wait
+  // would pass instantly and the failure would surface two steps later, at selectOption.
+  //
+  // The metric field existing proves `metricSpecs` populated, which is the rubric call.
+  await expect(page.locator("#upload-phonics_score")).toBeVisible({ timeout: 30_000 });
+  // A semester option with a real value proves the semesters call: while it is in flight the only
+  // child is `<option value="">Loading…</option>` (UploadView.jsx:216), and handleSubmit bails on
+  // its `!semester` guard, so "Parse report" would silently do nothing.
+  await expect(page.locator("#upload-semester option[value]:not([value=''])").first())
+    .toBeAttached({ timeout: 30_000 });
+
+  // The learner list is a third async source, belonging to LearnersPage rather than the modal.
+  // Its options must exist before anything is submitted or `learnerId` is empty and parse refuses.
+  await expect(page.locator("#upload-learner option").first()).toBeAttached();
+}
+
+test.describe("UC1 Upload Assessment Data", () => {
+  test("a valid report is parsed into a preview the therapist can confirm", async ({ page }) => {
+    await openUploadForm(page);
+
+    // Take whichever semester the form offers first — the endpoint guarantees it is a lookahead
+    // one. Injecting a fixed far-future option cannot work here: the select is a CONTROLLED
+    // component whose children come from the fetched array, so React strips a foreign option on
+    // the next reconciliation and takes the selection with it.
+    const semester = await page
+      .locator("#upload-semester option[value]:not([value=''])")
+      .first()
+      .getAttribute("value");
+    await page.selectOption("#upload-semester", semester);
+
+    await page.fill("#upload-phonics_score", "30");
+    // Writing is left BLANK on purpose: band A never sits that paper, and blank has to mean "not
+    // assessed" rather than a mark of zero — a zero would rank as the learner's weakest skill and
+    // steer UC3 at a paper they never took.
+    await page.setInputFiles("#upload-file", {
+      name: "report.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(REPORT_TEXT),
+    });
+
+    await page.getByRole("button", { name: "Parse report" }).click();
+
+    // The preview card echoes what WOULD be stored, including the distinction blank carries. The
+    // "Confirm & save" button being present is the proof the parse succeeded; clicking it is what
+    // this tier deliberately does not do (see the file header).
+    await expect(page.getByRole("button", { name: "Confirm & save" })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText("Not assessed")).toBeVisible();
+  });
+
+  test("a corrupted file is rejected with an error and nothing is stored", async ({ page }) => {
+    await openUploadForm(page);
+
+    const semester = await page
+      .locator("#upload-semester option[value]:not([value=''])")
+      .first()
+      .getAttribute("value");
+    await page.selectOption("#upload-semester", semester);
+    await page.fill("#upload-phonics_score", "30");
+
+    // Alternative flow 2a/3a. A .docx EXTENSION over bytes that are not a document gets past
+    // validate_format, which checks the extension only, and fails in extraction — the "corrupted
+    // file" branch rather than the "wrong file type" one.
+    await page.setInputFiles("#upload-file", {
+      name: "corrupt.docx",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      buffer: Buffer.from("this is not a docx"),
+    });
+
+    await page.getByRole("button", { name: "Parse report" }).click();
+
+    await expect(page.locator("#upload-error")).toBeVisible({ timeout: 30_000 });
+    // The refusal has to be a dead end for the SAVE, not just a red box: reaching the preview on
+    // a file that could not be parsed is the failure this guards against.
+    await expect(page.getByRole("button", { name: "Confirm & save" })).toBeHidden();
   });
 });

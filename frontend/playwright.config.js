@@ -5,11 +5,12 @@
 // working directory — left in e2e/, `npm run test:e2e` from frontend/ would not find it and
 // would silently run with defaults.
 //
-// TIER OVERLAP, STATED DEPLIBERATELY: this covers the same pyramid level as the Selenium suite in
-// backend/tests/system/ — a real browser against a running app. Both are kept for now because the
-// Selenium tier already carries the UC6/UC8/UC9/UC4/UC7 system cases and their plan IDs. Anything
-// added here should be a flow those do not already drive, until a decision is made about which
-// tier survives (see e2e/README.md).
+// TIER OVERLAP, STATED DELIBERATELY: this covers the same pyramid level as the Selenium suite in
+// backend/tests/system/ — a real browser against a running app. There is now one spec per use case
+// here, overlapping the Selenium system cases on purpose, so the PM3 plan's frontend-E2E column has
+// a slot for each. The specs assert the same postconditions through the same selectors so both
+// suites break together rather than one at a time. The duplication is a known cost and the choice
+// of which tier survives is still open — see e2e/README.md.
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({

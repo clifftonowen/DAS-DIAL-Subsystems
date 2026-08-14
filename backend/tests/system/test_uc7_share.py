@@ -1,12 +1,20 @@
-"""SYSTEM use case: UC7 "Share Learning Activity"
+"""SYSTEM use case: UC7 "Share Learning Activity".
 
-    tc7b invalid address   -> "Invalid email address, please re-enter"
-    tc7c render failure    -> "Could not export activity as PDF"
-    tc7a  valid address     -> "Activity sent to recipient"
-    tc7d email sends negative response is not tested since it requires a forced failure from smtp 
+Real headless Chrome driving the real built UI against the real backend + Supabase test project.
 
-tests are mostly skipped for now because need credentials + frontend/backend running, and test may need to touch supabase
-and i also need to add some secrets on github
+    TC7a  valid address    -> "Activity sent to recipient"
+    TC7b  invalid address  -> "Invalid email address, please re-enter"
+    TC7c  render failure   -> "Could not export activity as PDF"
+    TC7d  NOT TESTED — the email server returning a negative response needs a forced SMTP failure,
+          which this tier has no way to induce. The branch is covered where it can be faked:
+          UT-7.6 / UT-7.9 / UT-7.13 and IT-7.7 / IT-7.11.
+
+These skip rather than fail without their environment, like every other system test: they need the
+test-project credentials, a running backend and frontend, and the three TEST_*_ID secrets below.
+TC7c additionally needs an activity that is known not to render.
+
+A Playwright counterpart lives in frontend/e2e/share-activity.spec.js — same flow, same selectors,
+so a UI change breaks both together. See frontend/e2e/README.md on the tier overlap.
 """
 import os
 

@@ -15,6 +15,23 @@ or a documented refusal — so ST-3.1 proves the request resolved to one of them
 ST-3.2 is the deterministic half: with no DIAL marks the service refuses BEFORE retrieval or the
 model, so it needs no LLM at all — the CI-friendly proof.
 
+ST-3.3 AND ST-3.4 ARE NOT IMPLEMENTED HERE, AND SHOULD NOT BE. Both are statements about the
+validate loop — reprompt-then-succeed after one rejection (ST-3.3), and FLAGGED once retry_count
+reaches max_retries (ST-3.4). Driving either needs a ValidativeAgent whose verdict the test
+CONTROLS, and the only seam for that is `LLMApiClient.use_provider(...)`, which is in-process. This
+tier talks to a separate backend over HTTP and cannot reach it, so the verdict here comes from a
+real model — meaning a test asserting "flagged after N retries" would pass or fail on the model's
+mood. That is a flaky test, not coverage.
+
+The behaviour itself is covered at the tiers that CAN pin it down: UT-3.4 / UT-3.5
+(`unit/test_uc3_activity_graph.py`), and IT-3.8 / IT-3.9 in
+`integration/test_uc3_generate_activity.py` — which are the plan's IT-3.2 / IT-3.3 renumbered,
+because that file had already given 3.2 and 3.3 to the two guardrail cases (see its note at line
+204). Follow the plan IDs there and you land on the guardrails, not the retry loop.
+
+If the loop is ever made configurable from outside the process — a max_retries override on the
+request, say — ST-3.3 and ST-3.4 become drivable and belong here.
+
 UC5 (Retrieve Instructional Strategy) has no UI of its own — its trigger is "UC3 reaches the
 retrieval step" — so it is exercised implicitly inside generation here, not as a separate ST case.
 

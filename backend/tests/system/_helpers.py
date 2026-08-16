@@ -1,8 +1,59 @@
 """Shared helpers for Selenium system tests (not a test module)."""
+import os
+
 import pytest
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+# Where the API is, for the direct pre-checks below. The browser reaches it through the built
+# frontend's VITE_API_URL; these helpers bypass the browser, so they need it themselves.
+API_URL = os.environ.get("SYSTEM_API_URL", "http://127.0.0.1:8000")
+
+
+def require_endpoints(email, password, *paths, timeout=15):
+    """GET each path directly and fail NOW if the API answers with an error.
+
+    WHY THIS EXISTS: a browser wait cannot tell "slow" from "broken", and UploadView's metadata
+    fetch swallows its own failure (`catch {}` at UploadView.jsx:56 — deliberately, because the
+    form still works without the rubric). So when GET /assessments/semesters returned 500, the
+    only symptom was a semester select stuck on "Loading…". The Selenium wait polled it for the
+    full 30 seconds and then reported a message that GUESSED at the cause, three times in a row,
+    for a 500 that was never going to become a 200.
+
+    That happened for real on CI run 31787431067: a ~90-second window in which every Supabase
+    data-plane call raised `httpx.RemoteProtocolError: Server disconnected`, so
+    /assessments/semesters and /learners both answered 500 while /assessments/metrics (which
+    touches no database) kept answering 200. Three tests spent 30s each discovering that.
+
+    Calling the endpoint once, first, turns those 30 seconds into an immediate failure that names
+    the endpoint and the status. It does not make the flake less likely — nothing here can — it
+    makes it legible, and it distinguishes "the API is down" from "UC1 is broken".
+
+    httpx rather than requests: supabase-py already depends on it, so it is guaranteed present.
+    """
+    import httpx
+
+    try:
+        session = httpx.post(
+            f"{API_URL}/auth/login", json={"email": email, "password": password}, timeout=timeout,
+        )
+    except httpx.HTTPError as exc:
+        pytest.fail(f"the backend at {API_URL} is not reachable: {exc!r}")
+    if session.status_code != 200:
+        pytest.fail(f"POST /auth/login -> {session.status_code}: {session.text[:300]}")
+
+    headers = {"Authorization": f"Bearer {session.json()['access_token']}"}
+    for path in paths:
+        try:
+            response = httpx.get(f"{API_URL}{path}", headers=headers, timeout=timeout)
+        except httpx.HTTPError as exc:
+            pytest.fail(f"GET {path} did not complete: {exc!r}")
+        if response.status_code != 200:
+            pytest.fail(
+                f"GET {path} -> {response.status_code}, so this is an API failure rather than a "
+                f"UC failure. Body: {response.text[:300]}"
+            )
 
 
 def login(driver, base_url, email, password, timeout=20):

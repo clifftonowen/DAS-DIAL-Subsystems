@@ -1,0 +1,45 @@
+{
+  "target": "semesters",
+  "strategy": "coverage",
+  "seed": 17,
+  "elapsed_seconds": 51.46,
+  "execs": 808000,
+  "execs_per_second": 15700.0,
+  "rejected_pct": 99.43,
+  "slowest_input_ms": 3.2,
+  "distinct_findings": 3,
+  "corpus_size": 73,
+  "generations": 809,
+  "generations_kept": 1,
+  "branch_arcs_reached": 26,
+  "measured_package": "app.ingestion",
+  "findings": [
+    {
+      "kind": "roundtrip",
+      "signature": "roundtrip:roundtrip:t_semesters.py:85",
+      "message": "accepted '0999 Sem 2' but reformats it as '999 Sem 2'",
+      "hits": 547,
+      "shortest_input_bytes": 10,
+      "shortest_input": "0999 Sem 2",
+      "slowest_ms": 0.6
+    },
+    {
+      "kind": "invariant",
+      "signature": "invariant:invariant:t_semesters.py:93",
+      "message": "next_semester('9999 Sem 2') == '10000 Sem 1', which does not sort after it",
+      "hits": 398,
+      "shortest_input_bytes": 10,
+      "shortest_input": "9999 Sem 2",
+      "slowest_ms": 0.7
+    },
+    {
+      "kind": "invariant",
+      "signature": "invariant:invariant:t_semesters.py:104",
+      "message": "option_list returned a value it would itself reject: ['9999 Sem 2', '9999 Sem 1', '2023 Sem 2', '2022 Sem 1', '10000 Sem 1']",
+      "hits": 222,
+      "shortest_input_bytes": 10,
+      "shortest_input": "9999 Sem 1",
+      "slowest_ms": 0.1
+    }
+  ]
+}

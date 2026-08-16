@@ -119,11 +119,24 @@ export const getDashboardEvents = () => api("/dashboard/events");
 export const getCohortClusters = () => api("/dashboard/clusters");
 
 
+// Multipart POST. Deliberately does NOT set Content-Type — the browser has to add the multipart
+// boundary itself, and naming the type here would omit it and make the body unparseable.
+//
+// Otherwise identical to api() above, and for the same reasons: `errorMessage` rather than a raw
+// `data.detail`, and the status attached to the thrown error. Both were missing here. A 422 from
+// /assessments/preview carries FastAPI's LIST-shaped detail, so `new Error(data.detail)`
+// stringified it to the literal "[object Object]" and that is what the therapist read; and with
+// no `err.status` a caller could not tell a rejected file type (400) from an unparseable
+// report (422).
 async function apiForm(path, formData) {
   const headers = await authHeader();
   const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: formData });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || `${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const err = new Error(errorMessage(res, data));
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -136,3 +149,12 @@ export function previewAssessment(learnerId, file) {
 
 export const confirmAssessment = (payload) =>
   api("/assessments/confirm", { method: "POST", body: JSON.stringify(payload) });
+
+// The upload form's rubric: [{ key, label, max }] for the four DIAL marks. Served rather than
+// hardcoded so the form's valid range and the API's validator are the same number — a second
+// copy in the frontend is a second thing to get wrong when a paper changes.
+export const getAssessmentMetrics = () => api("/assessments/metrics");
+
+// Semesters the upload form offers, newest first: those already on record plus the next two, so
+// the list still has the right option the day a new semester starts.
+export const getAssessmentSemesters = () => api("/assessments/semesters");

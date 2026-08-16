@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\runner.py", line 94, in run_one
+    self.target.run(data)
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\targets\t_parse_verdict.py", line 141, in run
+    invariant(
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\oracles.py", line 42, in invariant
+    raise OracleViolation(OracleKind.INVARIANT, message)
+fuzz.oracles.OracleViolation: top_similarity returned the bool False where a float was promised

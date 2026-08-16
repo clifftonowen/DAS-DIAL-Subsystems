@@ -1,26 +1,75 @@
-// FRONTEND E2E — Playwright. UC4 Review Learning Activity (PLACEHOLDER).
+// FRONTEND E2E — Playwright. UC4 Review Learning Activity.
 //
-// Browser-driven counterpart to the Selenium `system` tests / pytest `e2e` tier. NOT YET
-// IMPLEMENTED — scaffolded so the Playwright tier shows a slot per use case. Fill in the steps
-// and remove `.skip` on the describe block to activate.
+// The Playwright counterpart to backend/tests/system/test_uc4_review.py, driving the same flow
+// through the same selectors. See ./README.md on tier overlap.
 //
-// NOTE: the Selenium suite already owns UC4 (backend/tests/system/test_uc4_review.py). Only add
-// here a flow it does not already drive, per e2e/README.md's tier-overlap policy.
+// THIS SPEC WRITES. A submitted review is a real row in the test project, and unlike UC1's
+// lookahead sitting it is additive — it does not change what any other suite reads, so it is left
+// in place rather than torn down. The text is stamped with a run id so a human reading the table
+// later can tell an automated review from a therapist's.
 //
 // Requires the app running (backend :8000, built frontend :4173) and TEST-project credentials.
 import { expect, test } from "@playwright/test";
+import { EMAIL, PASSWORD, openLearner } from "./_helpers.js";
 
-const EMAIL = process.env.TEST_THERAPIST_EMAIL;
-const PASSWORD = process.env.TEST_THERAPIST_PASSWORD;
+// The review box only renders under an activity (LearnerDetailPage.jsx:377), so this needs the
+// same learner UC7 uses: one that already HAS a generated activity.
+//
+// NO FALLBACK TO TEST_LEARNER_ID. It used to read
+// `TEST_SHARE_LEARNER_ID || TEST_LEARNER_ID`, and that is precisely how these two tests failed
+// their first CI run: TEST_SHARE_LEARNER_ID was unset, so they silently retargeted the UC2 learner
+// — who has marks but no generated activity — and spent 20s waiting for a #review-text that was
+// never going to render. A missing secret has to SKIP. Substituting a learner who cannot satisfy
+// the precondition turns a configuration gap into a red build that looks like a UC4 bug.
+const REVIEW_LEARNER_ID = process.env.TEST_SHARE_LEARNER_ID;
 
-test.describe.skip("UC4 Review Learning Activity", () => {
-  test("therapist submits a review and it survives a refresh", async ({ page }) => {
-    // TODO (learner must have a generated activity so #review-text renders):
-    // 1. logIn(page)
-    // 2. navigate to /learners/${TEST_LEARNER_ID}
-    // 3. fill #review-text, click "Upload"
-    // 4. expect the review text to appear
-    // 5. page.reload(); expect the review to still be present (from the DB, not local state)
-    expect(EMAIL && PASSWORD).toBeTruthy();
+test.skip(
+  !EMAIL || !PASSWORD,
+  "set TEST_THERAPIST_EMAIL and TEST_THERAPIST_PASSWORD (Supabase TEST project, never production)",
+);
+
+test.describe("UC4 Review Learning Activity", () => {
+  test("a submitted review survives a page reload", async ({ page }) => {
+    test.skip(
+      !REVIEW_LEARNER_ID,
+      "set TEST_SHARE_LEARNER_ID to a learner that already has a generated activity",
+    );
+
+    await openLearner(page, REVIEW_LEARNER_ID);
+
+    const reviewBox = page.locator("#review-text");
+    // Absent means the learner has no activity to review — a setup gap, not a UC4 failure, so say
+    // which it is rather than failing on a missing selector.
+    await expect(
+      reviewBox,
+      `learner ${REVIEW_LEARNER_ID} has no generated activity, so there is nothing to review`,
+    ).toBeVisible({ timeout: 20_000 });
+
+    const text = `Playwright e2e review ${Date.now()}`;
+    await reviewBox.fill(text);
+    // "Upload" is UC4's comment-only submit; the neighbouring buttons record an approval verdict,
+    // which is a different (and irreversible) decision. The use case is "leaves a review".
+    await page.getByRole("button", { name: "Upload", exact: true }).click();
+
+    await expect(page.getByText(text)).toBeVisible({ timeout: 20_000 });
+
+    // THE RELOAD IS THE POINT. Without it this passes on local React state alone, which is exactly
+    // the bug the use case's postcondition ("the review is stored and displayed") guards against.
+    // After a reload the text can only be on screen because it came back from the database.
+    await page.reload();
+    await expect(page.getByText(text)).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("an empty review cannot be submitted", async ({ page }) => {
+    test.skip(!REVIEW_LEARNER_ID, "set TEST_SHARE_LEARNER_ID");
+
+    await openLearner(page, REVIEW_LEARNER_ID);
+    await expect(page.locator("#review-text")).toBeVisible({ timeout: 20_000 });
+
+    // The submit is disabled until there is non-whitespace text (ReviewSection.jsx:141), so a
+    // blank review never reaches the service. Whitespace only, not empty, because trimming is the
+    // half that is easy to get wrong.
+    await page.locator("#review-text").fill("   ");
+    await expect(page.getByRole("button", { name: "Upload", exact: true })).toBeDisabled();
   });
 });

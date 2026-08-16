@@ -1,12 +1,12 @@
 // UNIT (frontend) — UC9 View Learner List: the assigned-vs-all moves on the Learners tab.
 //
-//     AB9.1   LearnersPage.jsx (React)   UT-9.12, UT-9.13
+//     AB9.1   LearnersPage.jsx (React)   UT-9.8 .. UT-9.11
 //
 // UC2's file (LearnersPage.test.jsx, UT-2.56 .. UT-2.60) pins the paged/searchable list
 // contract; UC9 is the therapist's ability to move between their OWN learners and the whole
 // table, and to recover when the list cannot load. Following the PM3 convention that a use
 // case's tests live in its own file, these carry the UC in the filename (as
-// AuthView.uc6/uc8.test.jsx do) and continue the UT-9 sequence past the plan's UT-9.1 .. UT-9.11.
+// AuthView.uc6/uc8.test.jsx do) and cover the plan's UT-9.8 .. UT-9.11.
 //
 // The mock/fixture block is duplicated from LearnersPage.test.jsx on purpose — the two files
 // are independent, and a shared helper would couple a UC9 test to UC2's setup.
@@ -49,7 +49,27 @@ beforeEach(() => {
   listLearners.mockResolvedValue(page([caseload("l1", "Aisha Binti Rahman")]));
 });
 
-test("UT-9.12: toggling off surfaces the whole cohort alongside the caseload", async () => {
+// ── UT-9.8 / UT-9.9 — the populated and empty list states ────────────────────
+test("UT-9.8: a populated list renders each learner's pseudonym, band and tier", async () => {
+  // The UC9 postcondition: the therapist sees who is assigned to them, with the card's
+  // band and tier. StudentCard renders them as "A2 · Tier 2" (band · tier).
+  listLearners.mockResolvedValue(page([caseload("l1", "Aisha Binti Rahman")]));
+  renderPage();
+
+  expect(await screen.findByText("Aisha Binti Rahman")).toBeInTheDocument();
+  expect(screen.getByText("A2 · Tier 2")).toBeInTheDocument();
+});
+
+test("UT-9.9: an empty result renders the 'No learners found.' empty state", async () => {
+  // total === 0 drives the count line to "No learners found." rather than a bare grid.
+  listLearners.mockResolvedValue(page([], 0));
+  renderPage();
+
+  expect(await screen.findByText("No learners found.")).toBeInTheDocument();
+});
+
+// ── UT-9.10 / UT-9.11a / UT-9.11b — the retry, toggle and back ───────────────
+test("UT-9.11a: toggling off surfaces the whole cohort alongside the caseload", async () => {
   // The move this use case exists for: the therapist can step out of their own ten and see
   // everyone. Flipping the toggle must actually RENDER the all-learners response — a cohort
   // row has no pseudonym, so it appears by student id, and the count note says what happened.
@@ -66,7 +86,7 @@ test("UT-9.12: toggling off surfaces the whole cohort alongside the caseload", a
   expect(screen.getByText(/includes the anonymised DAS research cohort/)).toBeInTheDocument();
 });
 
-test("UT-9.12: toggling back on returns to the assigned learners only", async () => {
+test("UT-9.11b: toggling back on returns to the assigned learners only", async () => {
   // The reverse move. If the button only ever narrowed the query and never widened the render
   // back, a therapist could not get home from the cohort.
   const user = userEvent.setup();
@@ -86,7 +106,7 @@ test("UT-9.12: toggling back on returns to the assigned learners only", async ()
   await waitFor(() => expect(screen.queryByText("Student 0142")).not.toBeInTheDocument());
 });
 
-test("UT-9.13: a failed request can be retried into a recovery", async () => {
+test("UT-9.10: a failed request can be retried into a recovery", async () => {
   // The error state offers a way out — without it, a transient failure strands the therapist
   // on a dead tab until they navigate away and back.
   const user = userEvent.setup();

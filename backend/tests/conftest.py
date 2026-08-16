@@ -61,6 +61,10 @@ def fake_supabase(monkeypatch):
     For UC6/UC8, `auth_users=[{"email", "password"}]` seeds the fake
     Authentication Service and `confirm_email=True` models a project with email
     confirmation switched on.
+
+    `missing_rpcs={"distinct_semesters"}` makes that Postgres function raise PGRST202,
+    modelling a project whose migrations are behind — how the repository's fallback
+    paths are exercised.
     """
     from tests.support.fake_supabase import FakeSupabase
     import app.core.supabase_client as sc
@@ -71,10 +75,10 @@ def fake_supabase(monkeypatch):
     installed = {}
 
     def make(seed=None, user_id="test-therapist-id", auth_users=None, confirm_email=False,
-             fail_on_execute=None):
+             fail_on_execute=None, missing_rpcs=()):
         fake = FakeSupabase(seed=seed, user_id=user_id,
                             auth_users=auth_users, confirm_email=confirm_email,
-                            fail_on_execute=fail_on_execute)
+                            fail_on_execute=fail_on_execute, missing_rpcs=missing_rpcs)
         getter = lambda: fake
         sc.get_supabase.cache_clear()          # drop any real cached client
         sc.get_auth_supabase.cache_clear()

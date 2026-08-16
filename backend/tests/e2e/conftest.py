@@ -47,6 +47,40 @@ def throwaway_email():
 
 
 @pytest.fixture
+def cleanup_uploads(service_client):
+    """Yields `register(learner_id, semester)`; removes what an upload wrote, in teardown.
+
+    UC1's confirm writes TWO rows — a sitting and an assessment record — and both are real in
+    this tier. Left behind they are worse than the junk accounts `cleanup_users` exists for: a
+    stray sitting for a seeded learner changes what "latest" means, so the NEXT run of UC2's
+    tests promotes an unexpected semester onto the learner and fails for reasons that have
+    nothing to do with the code under test.
+
+    Only rows the test itself registered are deleted, keyed on (learner_id, semester) so the
+    workbook's and the seed's sittings for the same learner survive. Failures are swallowed: a
+    test that already failed should not be masked by a teardown error.
+    """
+    created = []
+    yield lambda learner_id, semester: created.append((learner_id, semester))
+    for learner_id, semester in created:
+        try:
+            (service_client.table("learner_sittings")
+                           .delete()
+                           .eq("learner_id", learner_id)
+                           .eq("semester", semester)
+                           .execute())
+        except Exception:
+            pass
+        try:
+            (service_client.table("assessment_records")
+                           .delete()
+                           .eq("learner_id", learner_id)
+                           .execute())
+        except Exception:
+            pass
+
+
+@pytest.fixture
 def cleanup_users(service_client):
     """Yields a `register(user_id)` callable; deletes those users in teardown.
 

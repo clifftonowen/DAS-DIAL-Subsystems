@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\runner.py", line 94, in run_one
+    self.target.run(data)
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\targets\t_assessment_parser.py", line 196, in run
+    preview = parse_assessment_report(
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\app\ingestion\assessment_parser.py", line 67, in parse_assessment_report
+    tasks = _extract_tasks(text)
+            ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\app\ingestion\assessment_parser.py", line 120, in _extract_tasks
+    results.append(TaskResult(name=name.strip(), score=int(score), max_score=int(max_score)))
+                                                                             ^^^^^^^^^^^^^^
+ValueError: Exceeds the limit (4300 digits) for integer string conversion: value has 16348 digits; use sys.set_int_max_str_digits() to increase the limit

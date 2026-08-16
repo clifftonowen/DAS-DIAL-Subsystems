@@ -7,7 +7,7 @@ tests mock the very seams these exercise.
 
     IT-7.1 – 7.3     ShareService + ActivityRepository + EmailGateway
     IT-7.4 – 7.7     the above + ShareController (POST /share)
-    IT-7.8 – 7.11    the Dashboard layer — see the note at the bottom
+ 
 
 The plan's IT-7.5 lists "Valid PDF" as an input. The controller never receives a
 PDF: it takes an activityId and the PDF is produced inside the service. The test

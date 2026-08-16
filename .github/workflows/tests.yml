@@ -27,6 +27,18 @@
 #                             or generate_profile correctly returns 409 "no scores on
 #                             record" and the test's assert 200 fails. seed.sql gives all
 #                             ten seeded learners three sittings each, so any of them works.
+#   TEST_UNSCORED_LEARNER_ID  a learner with NO rows in learner_sittings. Drives the refusal
+#                             branches — UC2's ST-2.2 (409 -> upload prompt) and UC3's ST-3.2
+#                             (refused before the LLM, so no model needed). seed.sql's learners
+#                             all HAVE sittings, so this one has to be added by hand.
+#   TEST_SHARE_LEARNER_ID     a learner who already has a generated learning activity. UC7's
+#                             "Share" button is disabled without one, and UC4's review box only
+#                             renders under an activity.
+#
+# THE LAST TWO ARE NEW AND WERE PREVIOUSLY PASSED TO NO JOB AT ALL, which meant every UC7
+# browser test and both refusal branches self-skipped on every run while the jobs reported
+# success. They are now wired into `system` and `frontend-e2e`. Unset, those tests still skip
+# rather than fail — so read the annotations, not just the tick.
 #
 # Test-project settings that are NOT secrets but the three secret-backed tiers depend on:
 #   Authentication -> Providers -> Email -> "Confirm email" must be OFF. With it on,
@@ -162,6 +174,9 @@ jobs:
       # promotes their newest sitting, and with none it returns 409 rather than
       # skipping. seed.sql covers both for all ten of its learners.
       TEST_LEARNER_ID: ${{ secrets.TEST_LEARNER_ID }}
+      # UC2's alt flow 2a: a learner with no sittings, so generate-profile refuses with 409.
+      # Its counterpart to TEST_LEARNER_ID above — same skip-not-fail behaviour when unset.
+      TEST_UNSCORED_LEARNER_ID: ${{ secrets.TEST_UNSCORED_LEARNER_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -189,6 +204,13 @@ jobs:
       TEST_THERAPIST_EMAIL: ${{ secrets.TEST_THERAPIST_EMAIL }}
       TEST_THERAPIST_PASSWORD: ${{ secrets.TEST_THERAPIST_PASSWORD }}
       TEST_LEARNER_ID: ${{ secrets.TEST_LEARNER_ID }}
+      # THE OTHER TWO LEARNERS THE BROWSER TIER NEEDS. Without them UC2's ST-2.2, UC3's ST-3.2 and
+      # all of UC7 self-skip, and the job still reports success — the same silent-hole problem the
+      # TEST_LEARNER_ID note above describes, which is why `-rs` is on the pytest call.
+      #   TEST_UNSCORED_LEARNER_ID  a learner with NO rows in learner_sittings
+      #   TEST_SHARE_LEARNER_ID     a learner who already has a generated learning activity
+      TEST_UNSCORED_LEARNER_ID: ${{ secrets.TEST_UNSCORED_LEARNER_ID }}
+      TEST_SHARE_LEARNER_ID: ${{ secrets.TEST_SHARE_LEARNER_ID }}
       FRONTEND_URL: http://127.0.0.1:4173
       SYSTEM_ARTIFACT_DIR: ${{ github.workspace }}/test-artifacts
     steps:
@@ -249,6 +271,18 @@ jobs:
           path: test-artifacts/
           if-no-files-found: ignore
 
+      # THE SCREENSHOT SHOWS THE SYMPTOM, THIS SHOWS THE CAUSE. A browser test fails as a blank
+      # dropdown or a stuck spinner, which is the same picture whether the API 500'd, timed out, or
+      # was never called. Without the server's own log there is nothing to tell those apart after
+      # the runner is gone, and the whole job has to be re-run blind to learn anything.
+      - name: Upload backend log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-backend-log
+          path: backend/backend.log
+          if-no-files-found: ignore
+
   # ------------------------------------------------------------- frontend-e2e
   # Playwright against the real built UI. Same pyramid level as `system` (a browser driving a
   # running app), so it gates on the same hermetic tiers and shares the Supabase group.
@@ -271,6 +305,16 @@ jobs:
     env:
       TEST_THERAPIST_EMAIL: ${{ secrets.TEST_THERAPIST_EMAIL }}
       TEST_THERAPIST_PASSWORD: ${{ secrets.TEST_THERAPIST_PASSWORD }}
+      # The specs need a learner as well as a login, and skip individually without one. Missing
+      # these does NOT fail the job — login, sign-up, upload and view-learners still run, so the
+      # "no browser tests ran" check below stays green while UC2, UC3, UC4 and UC7 are silently
+      # absent. Set all three, or the tier covers half of what its name suggests.
+      #   TEST_LEARNER_ID           a learner WITH DIAL marks          (UC2, UC3)
+      #   TEST_UNSCORED_LEARNER_ID  a learner with NO DIAL marks       (UC2, UC3)
+      #   TEST_SHARE_LEARNER_ID     a learner with a generated activity (UC4, UC7)
+      TEST_LEARNER_ID: ${{ secrets.TEST_LEARNER_ID }}
+      TEST_UNSCORED_LEARNER_ID: ${{ secrets.TEST_UNSCORED_LEARNER_ID }}
+      TEST_SHARE_LEARNER_ID: ${{ secrets.TEST_SHARE_LEARNER_ID }}
       FRONTEND_URL: http://127.0.0.1:4173
     steps:
       - uses: actions/checkout@v4
@@ -320,10 +364,41 @@ jobs:
           done
 
       # The specs self-skip without the therapist credentials, so an unconfigured repo stays
-      # green — check the output for skips before treating a pass as evidence.
+      # green — the step below turns "everything skipped" into a failure rather than a pass.
       - name: Run Playwright tests
         working-directory: frontend
         run: npm run test:e2e
+
+      # `playwright test` EXITS 0 WHEN EVERY SPEC IS SKIPPED. That is how this job spent its early
+      # life reporting green while running two specs out of nine — the rest were `describe.skip`
+      # placeholders, which skip unconditionally, secrets or no secrets. A browser tier that tests
+      # nothing has to be loud about it, so read the JSON reporter's stats and fail on zero.
+      - name: Fail if no browser tests actually ran
+        working-directory: frontend
+        run: |
+          node -e '
+            const report = require("./playwright-results.json");
+            const { stats } = report;
+            const ran = stats.expected + stats.unexpected + stats.flaky;
+            console.log(`ran=${ran} skipped=${stats.skipped}`);
+
+            // Per-spec, because the totals hide the shape that actually bites: with the learner-id
+            // secrets unset, login/sign-up/upload/view-learners still run, so `ran > 0` and the job
+            // goes green while UC2, UC3, UC4 and UC7 never execute. Annotate those rather than fail
+            // — an unset secret is a configuration choice, and only a wholly dead tier is an error.
+            const skippedFiles = (report.suites ?? [])
+              .filter((s) => !JSON.stringify(s).includes(`"status":"expected"`))
+              .map((s) => s.title);
+            for (const f of skippedFiles) {
+              console.log(`::warning::${f} ran no tests - its learner-id secret is probably unset`);
+            }
+
+            if (ran === 0) {
+              console.error("::error::frontend-e2e executed 0 tests - every spec skipped. " +
+                "Check the TEST_THERAPIST_* secrets, and check for describe.skip left in a spec.");
+              process.exit(1);
+            }
+          '
 
       - name: Upload Playwright report
         if: failure()
@@ -331,4 +406,14 @@ jobs:
         with:
           name: playwright-report
           path: frontend/playwright-report/
+          if-no-files-found: ignore
+
+      # Same reasoning as the `system` job: the trace shows what the browser saw, this shows what
+      # the API did. Playwright's own trace cannot distinguish a slow endpoint from a broken one.
+      - name: Upload backend log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-e2e-backend-log
+          path: backend/backend.log
           if-no-files-found: ignore

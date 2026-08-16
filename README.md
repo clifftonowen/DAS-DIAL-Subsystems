@@ -40,18 +40,34 @@ notebooks/       # cohort clustering analysis (Subsystem 2) — see Setup step 4
 3. Copy the Project URL, anon key, service-role key, and JWT secret.
 
 ### 2. Backend
+Write `backend/.env`. Only these three have no default, and the app will not start without them;
+every other setting in `app/core/config.py` is optional and documented there.
+```
+SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+SUPABASE_KEY=your-service-role-key
+SUPABASE_JWT_SECRET=your-jwt-secret
+```
+`LLM_PROVIDER` and `EMBEDDING_PROVIDER` both default to `ollama`, which needs `ollama serve` running
+locally and no key. For a hosted model instead, set the provider and its key (`GEMINI_API_KEY`,
+`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`).
+
 ```bash
 cd backend
-cp .env.example .env      # fill in Supabase + OpenAI keys
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 Open http://localhost:8000/docs — all endpoints are live. `GET /health` should return `{"status":"ok"}`.
 
 ### 3. Frontend
+Write `frontend/.env`, with all three:
+```
+VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_API_URL=http://localhost:8000
+```
+
 ```bash
 cd frontend
-cp .env.example .env      # fill in Supabase URL + anon key + API url
 npm install
 npm run dev               # http://localhost:5173
 ```
@@ -176,6 +192,21 @@ The frontend integration tier is where a **client/server contract** breaks get c
 and `lib/api.js` are real and only the network is replaced, so it sees request shaping and
 response handling that a unit test — which mocks `lib/api.js` — cannot. It has already caught two
 such bugs; both are described in that folder's README.
+
+### Robustness testing (fuzzing)
+
+Alongside the pyramid, `backend/fuzz/` holds a **coverage-guided fuzzer** we wrote. Every test
+above uses inputs a person thought of; the fuzzer generates the ones nobody did, runs them to a
+wall-clock budget, and checks the result against five oracle kinds (crash, hang, invariant,
+roundtrip, differential). An unattended 8-hour campaign has run 74.2 million executions across
+seven targets and found 17 distinct defects.
+
+```bash
+cd backend
+.venv/Scripts/python -m fuzz.runner --strategy coverage --target all --seconds 300
+```
+
+`backend/fuzz/README.md` is the guide; `docs/PM_Robustness_Testing.md` reports the findings.
 
 ### Install
 ```bash

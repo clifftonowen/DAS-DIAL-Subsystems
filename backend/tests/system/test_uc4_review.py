@@ -1,4 +1,22 @@
-"""SYSTEM/UI E2E — UC4 from therapist input back to therapist output."""
+"""SYSTEM use case: UC4 "Review Learning Activity", therapist input back to therapist output.
+
+Real headless Chrome driving the real built UI against the real backend + Supabase test project.
+
+    TC4   therapist leaves a review   -> stored, and still there after a refresh
+    TC4a  the write is rejected       -> "Review could not be saved", and no review on screen
+
+The third test has no plan ID. `test_therapist_approval_survives_a_page_refresh` covers the
+approval verdict, which the PM3 plan's UC4 does not describe at all — the use case there is only
+"leaves a review". It stays because the verdict is the half a refresh is most likely to lose, but
+it EXTENDS the plan rather than implementing a row of it.
+
+EVERY TEST HERE REFRESHES THE PAGE, and that is the point rather than caution. UC4's postcondition
+is "the review is stored and displayed"; without the refresh each of these passes on ReviewSection's
+local post-submit state alone, which is exactly the bug the postcondition exists to catch.
+
+A Playwright counterpart lives in frontend/e2e/review-activity.spec.js — same flow, same selectors,
+so a UI change breaks both together. See frontend/e2e/README.md on the tier overlap.
+"""
 import os
 import uuid
 

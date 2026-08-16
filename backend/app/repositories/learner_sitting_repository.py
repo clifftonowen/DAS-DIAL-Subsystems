@@ -14,12 +14,34 @@ THREE WRITERS, ONE TABLE:
 newest and ProfilingService promotes it onto the learner — so an uploaded assessment reaches the
 dashboard through exactly the same path a workbook row does.
 """
+import logging
+
 from app.repositories.base import BaseRepository
+
+logger = logging.getLogger(__name__)
 
 # PostgREST's per-request row cap, and Supabase's payload limit. Same values and same reasons as
 # LearnerRepository — a read that must be complete pages, a write that is large batches.
 PAGE = 1000
 BATCH = 500
+
+# PostgREST's code for "the function you called does not exist", which is what a project that has
+# not run migrations/2026-08-14_distinct_semesters.sql returns. Matched on the code rather than the
+# message so a wording change upstream does not turn a missing migration into a 500.
+MISSING_FUNCTION = "PGRST202"
+
+
+def _function_is_missing(exc: Exception) -> bool:
+    """True only for PGRST202 — the schema is behind, not the database is down.
+
+    NARROW ON PURPOSE. A blanket except here would swallow a real outage and quietly page 22,892
+    rows on every request instead, which is the exact cost this function exists to remove: the
+    slow path would be taken forever and nothing would say so.
+    """
+    if getattr(exc, "code", None) == MISSING_FUNCTION:
+        return True
+    # Older postgrest builds surface the code only in the stringified body.
+    return MISSING_FUNCTION in str(exc)
 
 # Every column the chart and the promotion need. Not `*`: the ingest writes ~22,892 rows and the
 # reads are per learner, so the shape is small either way, but naming it keeps the two callers
@@ -62,6 +84,89 @@ class LearnerSittingRepository(BaseRepository):
                    .execute().data
         ) or []
         return rows[0] if rows else None
+
+    def distinct_semesters(self) -> list[str]:
+        """Every semester that has at least one sitting, newest first.
+
+        ONE ROUND TRIP, via the `distinct_semesters()` Postgres function
+        (infra/migrations/2026-08-14_distinct_semesters.sql). PostgREST has no DISTINCT, so the
+        only way to do this from the client is to read the whole `semester` column and deduplicate
+        here — and because a PostgREST response is capped at 1,000 rows and truncates SILENTLY,
+        doing it correctly means paging. That is ~23 requests over ~22,892 rows to learn about ten
+        strings, on every open of the upload form, and it is the ~2s the UC1 browser tests have to
+        wait out before the semester select holds anything real.
+
+        Imported lazily, like the curriculum RPCs: the test fixture patches `get_supabase` on
+        `app.core.supabase_client` and `app.repositories.base`, so a module-level import here would
+        capture the real client and bypass the fake.
+        """
+        from app.core.supabase_client import get_supabase
+
+        try:
+            rows = get_supabase().rpc("distinct_semesters", {}).execute().data or []
+        except Exception as exc:
+            if not _function_is_missing(exc):
+                raise
+            # The migration has not been run on this project. Falling back keeps UC1 WORKING rather
+            # than fast: unlike the curriculum RPCs, nothing upstream catches an error here, so a
+            # PGRST202 would reach GET /assessments/semesters, reject UploadView's Promise.all and
+            # leave the therapist with a form that has no semesters and cannot submit.
+            logger.warning(
+                "distinct_semesters(): Postgres function missing, falling back to a paged scan of "
+                "%s. Run infra/migrations/2026-08-14_distinct_semesters.sql to make this one "
+                "request instead of ~23.", self.table,
+            )
+            return self._distinct_semesters_by_paging()
+
+        return sorted({r["semester"] for r in rows if r.get("semester")}, reverse=True)
+
+    def _distinct_semesters_by_paging(self) -> list[str]:
+        """The pre-migration path: read the column, deduplicate here, page past the 1,000 cap.
+
+        Kept as a fallback rather than deleted, so the migration is optional rather than a
+        breaking change. Correct, just ~23 round trips wide.
+        """
+        seen: set[str] = set()
+        offset = 0
+        while True:
+            page = (
+                self.db.select("semester")
+                       .range(offset, offset + PAGE - 1)
+                       .execute().data
+            ) or []
+            seen.update(row["semester"] for row in page if row.get("semester"))
+            if len(page) < PAGE:
+                return sorted(seen, reverse=True)
+            offset += PAGE
+
+    def peer_marks(self, semester: str, band_group: str) -> list[dict]:
+        """Every sitting from the same semester and band group — the population a mark is ranked
+        against when UC1's upload computes its percentiles.
+
+        (semester, band_group) is the scope `dial_workbook.percentiles` uses for sitting-level
+        percentiles, and it has to be the same one: ranking a 2022 mark against the 2026 cohort
+        would make the profile line move as the population around the learner changes rather than
+        as the learner does.
+
+        Returns the four marks only — the ranking needs no identity, and not selecting it keeps
+        one learner's upload from reading another's pseudonym. Paged, because a band group in one
+        semester runs to a few thousand rows and PostgREST truncates at 1,000 WITHOUT erroring.
+        """
+        columns = "phonics,word_reading_accuracy,word_spelling,writing"
+        rows: list[dict] = []
+        offset = 0
+        while True:
+            page = (
+                self.db.select(columns)
+                       .eq("semester", semester)
+                       .eq("band_group", band_group)
+                       .range(offset, offset + PAGE - 1)
+                       .execute().data
+            ) or []
+            rows.extend(page)
+            if len(page) < PAGE:
+                return rows
+            offset += PAGE
 
     def upsert_many(self, rows: list[dict], batch: int = BATCH) -> int:
         """Bulk write, conflicting on (learner_id, semester).

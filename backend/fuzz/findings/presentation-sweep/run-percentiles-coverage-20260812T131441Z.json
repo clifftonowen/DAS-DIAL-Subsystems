@@ -1,0 +1,17 @@
+{
+  "target": "percentiles",
+  "strategy": "coverage",
+  "seed": 16,
+  "elapsed_seconds": 51.44,
+  "execs": 18782,
+  "execs_per_second": 365.2,
+  "rejected_pct": 0.0,
+  "slowest_input_ms": 27.3,
+  "distinct_findings": 0,
+  "corpus_size": 73,
+  "generations": 19,
+  "generations_kept": 1,
+  "branch_arcs_reached": 20,
+  "measured_package": "app.services",
+  "findings": []
+}

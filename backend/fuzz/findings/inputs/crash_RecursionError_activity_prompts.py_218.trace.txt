@@ -1,0 +1,19 @@
+Traceback (most recent call last):
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\runner.py", line 94, in run_one
+    self.target.run(data)
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\fuzz\targets\t_parse_verdict.py", line 82, in run
+    verdict = parse_verdict(raw)
+              ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Cliffton\Documents\GitHub\DAS-DIAL-Subsystems\backend\app\prompts\activity_prompts.py", line 218, in parse_verdict
+    parsed = json.loads(text[start:end + 1])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\json\__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\json\decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\json\decoder.py", line 353, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ^^^^^^^^^^^^^^^^^^^^^^
+RecursionError: maximum recursion depth exceeded while decoding a JSON object from a unicode string

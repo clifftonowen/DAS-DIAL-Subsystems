@@ -88,7 +88,16 @@ create table if not exists assessment_records (
   task_results jsonb default '{}',
   strengths text[] default '{}',
   weaknesses text[] default '{}',
-  confidence_score float default 0
+  confidence_score float default 0,
+  -- The four DIAL marks as submitted. NULLABLE AND NULL BY DEFAULT, never 0: writing is not
+  -- administered to band A at all, and a zero there is a real mark that would rank as the
+  -- learner's weakest skill. The same marks are also written to `learner_sittings`, which is
+  -- the grain the profile page and Generate Profile read; this table keeps the report as filed.
+  -- Added to an existing project by migrations/2026-08-11_uc1_add_assessment_metric.sql.
+  writing_score float,
+  phonics_score float,
+  word_reading_score float,
+  word_spelling_score float
 );
 
 -- One row per learner per SEMESTER — the score history behind the profile page's line chart.
@@ -130,6 +139,27 @@ create table if not exists learner_sittings (
   unique (learner_id, semester)             -- the ingest's upsert key
 );
 create index if not exists idx_sittings_learner on learner_sittings (learner_id, semester desc);
+
+-- The ~11 distinct semesters on record, newest first — the upload form's dropdown (UC1).
+--
+-- PostgREST has no DISTINCT, so without this the repository reads the whole `semester` column and
+-- deduplicates in Python, paging to get past the silent 1,000-row response cap: ~23 round trips
+-- over ~22,892 rows to learn about ten strings. The scan was never the cost; the wire was.
+--
+-- The repository FALLS BACK to that paged scan when this function is absent (PGRST202), so a
+-- project that has not run migrations/2026-08-14_distinct_semesters.sql still works — just
+-- slowly. See LearnerSittingRepository.distinct_semesters.
+create or replace function distinct_semesters()
+returns table (semester text)
+language sql
+stable
+as $$
+  -- Alias required: bare `semester` is ambiguous against the OUT column of the same name.
+  select distinct ls.semester
+  from learner_sittings ls
+  where ls.semester is not null
+  order by 1 desc;
+$$;
 
 -- One row per k-means fit — the cohort model plus one per band group — so the dashboard can
 -- show how each k was chosen and compare the two scopes.

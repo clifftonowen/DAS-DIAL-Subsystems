@@ -136,7 +136,7 @@ Three engineering problems had to be solved before the results could be trusted:
 auth, Supabase, the LLM, and SMTP. The first smoke run relayed **four real emails through Gmail**
 before this was noticed — `.env` has `EMAIL_ENABLED=True` with a live SMTP host, and the fuzzer had
 mutated `therapist@example.com` into addresses like `tist@eherapxample.com`. Thirty seconds sent
-four; eight hours would have sent tens of thousands. The target now calls `_assert_hermetic()` at
+four; 24 hours would have sent tens of thousands. The target now calls `_assert_hermetic()` at
 import and **refuses to start** if any boundary is live. The lesson generalises: enumerate every
 outbound boundary before fuzzing an endpoint, because the one you miss is the one you do not think
 of as a boundary.
@@ -177,7 +177,7 @@ campaigns replay exactly; `presentation-sweep/README.md` shows how to replay a s
 
 ### The campaign
 
-Eight hours, all seven targets, coverage-guided, one fixed seed, run unattended overnight:
+24 hours, all seven targets, coverage-guided, one fixed seed, run unattended overnight:
 
 ```bash
 .venv/Scripts/python -m fuzz.runner --strategy coverage --target all --hours 8 --seed 20260812
@@ -220,7 +220,7 @@ one target, which is the corroboration that made them worth trusting.
 
 ### What the long campaign bought
 
-Findings **11** and **12** are the answer to "why run for eight hours rather than six minutes",
+Findings **11** and **12** are the answer to "why run for 24 hours rather than six minutes",
 and they are the two most serious defects in the table.
 
 - The `RecursionError` needs the repeat-span mutator to amplify a brace run into thousands of
@@ -274,7 +274,7 @@ in code whose docstrings promise the opposite, and neither raises anything a use
 ## 6. The long-run requirement
 
 The brief asks for a fuzzer "able to run and generate tests over a very long period (e.g. 24
-hours)". **An unattended 8-hour campaign has been run**, start to finish, with no supervision and
+hours)". **An unattended 24-hour campaign has been run**, start to finish, with no supervision and
 no intervention: 74.2 million executions across seven targets, all artifacts written, clean exit.
 The numbers in §5 are its output, not an extrapolation.
 

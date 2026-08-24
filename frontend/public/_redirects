@@ -1,0 +1,5 @@
+# SPA fallback. Dashboard.jsx mounts a BrowserRouter with /learners and /learners/:id, so those
+# paths exist only in the browser — the host has no file at /learners/<uuid> and would 404 on a
+# deep link or a plain refresh. This serves index.html for anything unmatched and lets the router
+# resolve the path client-side. 200, not 302: the URL must stay as typed or the route is lost.
+/*    /index.html   200

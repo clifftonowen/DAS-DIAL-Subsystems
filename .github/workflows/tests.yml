@@ -417,3 +417,90 @@ jobs:
           name: frontend-e2e-backend-log
           path: backend/backend.log
           if-no-files-found: ignore
+
+  # ------------------------------------------------------------------ deploy
+  # Deployment is a JOB HERE rather than either platform's own git integration, and that is the
+  # whole point: DO App Platform and Cloudflare Pages both offer auto-deploy-on-push, and both
+  # would ship a red build. `needs` on the two terminal test jobs is what makes this CD rather
+  # than "push and hope".
+  #
+  # `system` and `frontend-e2e` are the leaves of the pyramid — needing them transitively needs
+  # every job above them, so listing the other five would be noise.
+  deploy:
+    needs: [system, frontend-e2e]
+    # Pushes to main only. Without the event check a PR merged from a fork's branch named `main`
+    # could match on ref alone.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Serialise deploys. Two pushes in quick succession otherwise race, and the loser can land
+    # AFTER the winner and quietly publish the older commit. cancel-in-progress stops the
+    # superseded run instead of letting it finish.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- backend: DigitalOcean App Platform ------------------------------------------------
+      # App Platform builds the image itself from backend/Dockerfile, so there is no registry
+      # push here. It reads its own env vars (LLM_PROVIDER, EMBEDDING_PROVIDER,
+      # USE_EMBEDDING_ALT, MIN_SIMILARITY, CORS_ORIGINS, SIGNUP_ENABLED, the Supabase keys) from
+      # the app spec — they are NOT set here, because putting them in the workflow would mean a
+      # secret lands in a public repo's logs on the first careless `echo`.
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Deploy API
+        # --wait blocks until the deployment finishes, so a failed rollout fails this job instead
+        # of reporting success while App Platform is still building.
+        run: doctl apps create-deployment ${{ secrets.DO_APP_ID }} --wait
+
+      # --- frontend: Cloudflare Pages --------------------------------------------------------
+      # Built here rather than by Pages' own git integration for one reason: the three VITE_*
+      # values are inlined at build time, so the build must happen somewhere that already knows
+      # which environment it is for. Doing it in the gated job keeps that decision next to the
+      # gate.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          # Must match an origin in the API's CORS_ORIGINS or login fails in the browser with a
+          # bare "Failed to fetch" and no status for the UI to show.
+          VITE_API_URL: ${{ secrets.PROD_API_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # Public by design and safe to inline: row level security is what protects the data,
+          # not the obscurity of this key.
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        # vite.config.js fails the build if any of the three is empty, so a missing secret stops
+        # here instead of publishing a bundle that cannot reach the API.
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish frontend
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend
+          # dist/_redirects (from public/) ships with this and is what makes /learners/:id
+          # survive a refresh.
+          command: pages deploy dist --project-name=${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+
+      # Proves the rollout is actually serving, not merely that the platforms accepted it. A
+      # deploy that reports success and answers 502 is the failure this catches.
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          echo "GET ${{ secrets.PROD_API_URL }}/health"
+          body=$(curl -fsS --retry 5 --retry-delay 5 --retry-all-errors --max-time 30 \
+                 "${{ secrets.PROD_API_URL }}/health")
+          echo "$body"
+          echo "$body" | grep -q '"status":"ok"'

@@ -1,0 +1,30 @@
+# Build context trimming. Without this the whole backend/ tree ships to the daemon, which on
+# this repo means the virtualenvs (hundreds of MB) and — more importantly — `.env`, which holds
+# the service-role key. `.env` is gitignored but Docker does not read .gitignore, so a plain
+# `COPY . .` in any future edit would bake the secret into a layer. Keep it excluded here even
+# though the Dockerfile currently copies only `app/`.
+.env
+.env.*
+.venv/
+.venv-eval/
+venv/
+
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Test, eval and fuzz trees. None are imported by app/ at request time, and the eval tree in
+# particular pulls the ragas/langchain stack that requirements.txt deliberately keeps out.
+tests/
+evals/
+fuzz/
+
+# Gitignored source material (curriculum PDFs, ingestion logs). Ingest-time only — everything
+# the API serves already lives in Supabase.
+data/
+
+Dockerfile
+.dockerignore

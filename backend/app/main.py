@@ -5,6 +5,10 @@ from app.core.config import settings
 from app.routers import (auth, learners, profiles, activities,
                          assessments, reviews, share, dashboard)
 
+# Fail at boot, not per request. The embedding provider and the vector column it ranks
+# against must agree, and a mismatch is invisible at every other layer — see Settings.verify.
+settings.verify()
+
 app = FastAPI(title=settings.app_name)
 
 app.add_middleware(

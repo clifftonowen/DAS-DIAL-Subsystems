@@ -20,6 +20,22 @@ class Settings(BaseSettings):
     llm_provider: str = "ollama"          # completion: "ollama" | "gemini" | "claude" | "openai"
     embedding_provider: str = "ollama"    # embeddings: "ollama" | "gemini" | "openai"
 
+    # Which vector column retrieval ranks against: False => `embedding` (nomic-embed-text,
+    # the incumbent), True => `embedding_alt` (gemini-embedding-001, the challenger). See
+    # infra/migrations/2026-08-10_curriculum_embedding_alt.sql for why two columns exist.
+    #
+    # THIS MUST AGREE WITH `embedding_provider`, and the failure mode when it does not is the
+    # reason it is a setting rather than a per-call argument. Embedding a query with one model
+    # and ranking it against another model's vectors is not an error — cosine similarity is
+    # perfectly happy to compare two unrelated spaces and return confident nonsense. Nothing
+    # raises, nothing logs, the activity just gets grounded in the wrong chunks. `verify()`
+    # below refuses to boot on a mismatch so that a half-flipped .env fails loudly instead.
+    #
+    # Deploying on Gemini therefore means BOTH `EMBEDDING_PROVIDER=gemini` and
+    # `USE_EMBEDDING_ALT=true` — plus a re-derived `min_similarity`, since the gate is
+    # per-model (see below).
+    use_embedding_alt: bool = False
+
     # Retrieval gate: top-chunk cosine similarity below this => refuse without calling the LLM.
     # PROVIDER-SPECIFIC, which is why it is a setting and not a constant — two people evaluating
     # two embedders need two values at once. Derive it with scripts/calibrate_gate.py; never guess.
@@ -93,6 +109,17 @@ class Settings(BaseSettings):
 
     # App
     app_name: str = "DAS D.I.A.L"
+
+    # Whether POST /auth/signup will create accounts. Defaults TRUE so local development and the
+    # UC8 sign-up tests behave exactly as before; the public demo deployment sets
+    # SIGNUP_ENABLED=false and logs visitors in with a seeded demo therapist instead.
+    #
+    # Turning this off matters because the app is publicly reachable and every generated activity
+    # spends Gemini quota against one shared key — an open sign-up form on a public URL is an
+    # open invitation to spend it. Close it in the Supabase dashboard too ("Allow new users to
+    # sign up"), but THIS is the flag that counts: the UI posts to AuthController, not to
+    # Supabase, so the dashboard toggle alone would leave this route creating accounts.
+    signup_enabled: bool = True
     # Comma-separated browser origins allowed to call the API. Since the UI signs in
     # through AuthController rather than talking to Supabase directly, log-in itself
     # is now a cross-origin request, so an origin missing here breaks authentication
@@ -115,6 +142,33 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_use_tls: bool = True
+
+    def verify(self) -> None:
+        """Refuse to start on a configuration that would serve confident nonsense.
+
+        Called from app.main at import. It checks the ONE pairing that fails silently:
+        `embedding_provider` decides which model embeds the query, `use_embedding_alt` decides
+        which column that vector is ranked against, and every other layer treats a mismatch as
+        a perfectly ordinary retrieval. `embedding_alt` holds gemini-embedding-001 vectors, so
+        the two agree exactly when the provider is gemini.
+
+        Deliberately NOT validated here: `min_similarity`. It is a float with no wrong value
+        that can be detected from config alone — 0.50 is right for one model and far too loose
+        for another, and only scripts/calibrate_gate.py can tell them apart.
+        """
+        wants_alt = self.embedding_provider == "gemini"
+        if wants_alt and not self.use_embedding_alt:
+            raise RuntimeError(
+                "EMBEDDING_PROVIDER=gemini needs USE_EMBEDDING_ALT=true: gemini embeds the "
+                "query, but `embedding` holds nomic-embed-text vectors. Ranking one against "
+                "the other returns plausible-looking nonsense rather than an error."
+            )
+        if not wants_alt and self.use_embedding_alt:
+            raise RuntimeError(
+                f"USE_EMBEDDING_ALT=true needs EMBEDDING_PROVIDER=gemini, not "
+                f"'{self.embedding_provider}': `embedding_alt` holds gemini-embedding-001 "
+                f"vectors, so ranking another provider's query vector against it is meaningless."
+            )
 
 
 settings = Settings()

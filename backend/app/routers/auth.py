@@ -7,6 +7,7 @@ status codes.
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+from app.core.config import settings
 from app.schemas.dto import Credentials, Session, SignUpResult
 from app.services.auth_service import AuthError, AuthService, SignUpError
 
@@ -18,6 +19,14 @@ bearer = HTTPBearer(auto_error=True)
 @router.post("/signup", response_model=SignUpResult)
 def sign_up(body: Credentials):
     """UC8 `signUp(email, password)`."""
+    if not settings.signup_enabled:
+        # 403, not 404: the endpoint exists and the request was well-formed, it is the action
+        # that is refused. A 404 would read to the UI as a bad URL and send someone hunting for
+        # a routing bug that isn't there.
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Sign up is closed on this deployment. Use the demo account shown on the sign-in page.",
+        )
     try:
         return svc.register(body.email, body.password)
     except SignUpError as e:

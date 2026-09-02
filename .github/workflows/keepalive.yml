@@ -1,0 +1,88 @@
+# Keeps the production Supabase project from auto-pausing.
+#
+# Free-plan projects pause after ~7 days without activity, and a paused project's subdomain stops
+# resolving entirely — DNS returns NXDOMAIN, so the API cannot reach the database and the deployed
+# demo is simply down. That is a bad failure for a link on a CV: it works when you test it, and it
+# is dead for whoever opens it three weeks later. This job makes one real query often enough that
+# the idle clock never reaches seven days.
+#
+# The TEST project deliberately is NOT pinged. The e2e tiers run `supabase start` against a local
+# stack now (see tests.yml), so no hosted test project needs to stay awake — that is what freed a
+# slot on the 2-active-project free plan.
+name: keepalive
+
+on:
+  schedule:
+    # 03:00 UTC every second day. The window is 7 days, so this leaves a lot of slack on purpose:
+    # GitHub's scheduled runs are best-effort and get delayed or dropped entirely under load, so a
+    # cadence that only just fits would eventually miss and pause the project anyway.
+    - cron: "0 3 */2 * *"
+  # So you can prove it works now rather than waiting two days, and wake the project by hand after
+  # it has already paused.
+  workflow_dispatch:
+
+# Never let two pings overlap. Harmless if they did, but a queue of them signals something is
+# wrong and is easier to see when there is only ever one.
+concurrency:
+  group: supabase-keepalive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query production Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          set -uo pipefail
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_KEY:-}" ]; then
+            echo "::error::SUPABASE_URL or SUPABASE_KEY is not set, so nothing was pinged."
+            exit 1
+          fi
+
+          # Strip scheme, then everything from the first ':' or '/' — the port has to go too, or a
+          # URL with one yields a "host" that can never resolve.
+          host="$(echo "$SUPABASE_URL" | sed -E 's#^https?://##; s#[:/].*##')"
+
+          # A real query against a real table, not just /auth/v1/health: the point is to touch
+          # Postgres, and a request the database never sees may not count as activity.
+          # `Prefer: count=exact` with an empty range asks for the count and no rows.
+          code=""
+          code="$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 30 \
+                    --retry 3 --retry-delay 10 --retry-all-errors \
+                    "$SUPABASE_URL/rest/v1/learners?select=id" \
+                    -H "apikey: $SUPABASE_KEY" \
+                    -H "Authorization: Bearer $SUPABASE_KEY" \
+                    -H "Prefer: count=exact" \
+                    -H "Range: 0-0" 2>/tmp/curlerr)"
+          rc=$?
+
+          # 6 is CURLE_COULDNT_RESOLVE_HOST. Called out separately because a paused Supabase
+          # project stops resolving at all, so this exact code is near-diagnostic of one — and
+          # left generic it reads like a transient network blip. Using curl's own exit code rather
+          # than a getent/host/nslookup probe keeps this working on any runner image.
+          if [ "$rc" -eq 6 ]; then
+            echo "::error::Could not resolve $host. A paused Supabase project stops resolving, so"
+            echo "::error::the project has most likely already paused — restore it in the dashboard."
+            exit 1
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::curl failed with exit $rc"
+            head -c 400 /tmp/curlerr
+            exit 1
+          fi
+
+          if [ "$code" != "200" ] && [ "$code" != "206" ]; then
+            echo "::error::Supabase returned HTTP $code"
+            head -c 400 /tmp/body
+            exit 1
+          fi
+
+          echo "OK — HTTP $code from $host, project is awake."
+
+# NOTE: GitHub disables scheduled workflows on a repository with no commits for 60 days, and emails
+# the owner first. If this repo goes quiet for that long, re-enable it in the Actions tab or run it
+# once with workflow_dispatch — otherwise the keepalive silently stops and the project pauses.

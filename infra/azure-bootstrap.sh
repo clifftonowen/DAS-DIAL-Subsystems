@@ -43,10 +43,25 @@ az extension add --name containerapp --upgrade --only-show-errors
 az provider register --namespace Microsoft.App --wait
 az provider register --namespace Microsoft.OperationalInsights --wait
 
-# Every create below is guarded, so a run that died halfway can simply be run again. `az group
-# create` is already idempotent; the others are not, and `set -e` turns "already exists" into an
-# abort rather than something you can ignore.
-az group create --name "$RG" --location "$LOCATION" -o none
+# Every create below is guarded, so a run that died halfway can simply be run again. `set -e`
+# turns "already exists" into an abort rather than something you can ignore.
+#
+# `az group create` included: it is idempotent only while the location MATCHES. Re-run it against
+# an existing group with a different one and it fails outright —
+#   (InvalidResourceGroupLocation) Invalid resource group location 'eastasia'. The Resource group
+#   already exists in location 'southeastasia'.
+# — which is exactly what a first attempt in a policy-blocked region leaves behind, since the group
+# is created before the step that gets refused.
+EXISTING_RG_LOCATION="$(az group show --name "$RG" --query location -o tsv 2>/dev/null || true)"
+if [ -z "$EXISTING_RG_LOCATION" ]; then
+  az group create --name "$RG" --location "$LOCATION" -o none
+elif [ "$EXISTING_RG_LOCATION" != "$LOCATION" ]; then
+  echo "  NOTE: resource group $RG already exists in '$EXISTING_RG_LOCATION', not '$LOCATION'."
+  echo "        Reusing it as-is. A group's location only records where its own metadata lives —"
+  echo "        the resources below are still created in '$LOCATION', and nothing breaks."
+  echo "        To make them match, delete it first and re-run:"
+  echo "          az group delete --name $RG --yes"
+fi
 
 if ! az containerapp env show --name "$ENVIRONMENT" --resource-group "$RG" -o none 2>/dev/null; then
   # Takes several minutes and prints nothing while it works. That is normal, not a hang.

@@ -16,8 +16,21 @@
 set -euo pipefail
 
 RG="${RG:-das-dial-rg}"
-LOCATION="${LOCATION:-southeastasia}"        # Singapore. Keep it near Supabase — every request
-                                             # makes a round trip there.
+# Hong Kong, not Singapore, and not by preference. `southeastasia` is nearer to Supabase, but this
+# subscription's Azure for Students policy refuses it:
+#
+#   (RequestDisallowedByAzure) Resource 'workspace-...' was disallowed by Azure: This policy
+#   maintains a set of best available regions where your subscription can deploy resources.
+#
+# That set is assigned per subscription from spare capacity, so it is not the same for everyone and
+# it can change. `eastasia` is the closest one this subscription allows. Note the failure surfaces
+# on the Log Analytics workspace the Container Apps environment creates, NOT on the resource group
+# — `az group create` is exempt and succeeds, so a blocked region looks like it worked until the
+# environment step.
+#
+# To find the allowed set on another subscription:
+#   az policy assignment list --query "[].parameters" -o json   # look for listOfAllowedLocations
+LOCATION="${LOCATION:-eastasia}"
 ENVIRONMENT="${ENVIRONMENT:-das-dial-env}"
 APP="${APP:-das-dial-api}"
 REPO="clifftonowen/DAS-DIAL-Subsystems"

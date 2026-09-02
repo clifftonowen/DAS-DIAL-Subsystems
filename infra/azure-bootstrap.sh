@@ -41,11 +41,46 @@ az containerapp env create --name "$ENVIRONMENT" --resource-group "$RG" --locati
 # cost: roughly $14/month at this size, so the $100 credit covers about seven months. Set it to 0
 # to scale to zero and pay almost nothing, at the price of a few seconds on the first request
 # after idle. That is a one-flag change; nothing else about the deployment differs.
-echo "Enter the four secret values (input is not echoed):"
-read -rsp "  SUPABASE_URL: " V_URL; echo
-read -rsp "  SUPABASE_KEY (service-role): " V_KEY; echo
-read -rsp "  SUPABASE_JWT_SECRET: " V_JWT; echo
-read -rsp "  GEMINI_API_KEY: " V_GEM; echo
+# Secrets come from the environment when set, and are prompted for otherwise. The env path exists
+# because `read` is only safe when this script is RUN as a file: paste it into an interactive
+# shell and each `read` consumes the next LINE OF THE SCRIPT as its answer, silently. Running
+# `bash azure-bootstrap.sh` is the supported way; the env vars are for anywhere that is awkward.
+#
+#   SUPABASE_URL=... SUPABASE_KEY=... SUPABASE_JWT_SECRET=... GEMINI_API_KEY=... \
+#     bash infra/azure-bootstrap.sh
+prompt_for() {
+  local var="$1" label="$2" existing="${!1:-}"
+  if [ -n "$existing" ]; then
+    printf '  %s: taken from the environment\n' "$label" >&2
+    printf '%s' "$existing"
+    return
+  fi
+  # Read from the terminal explicitly rather than stdin, so a piped or pasted script cannot
+  # answer its own prompt. No terminal (CI, `bash script < /dev/null`) is a clear error rather
+  # than a hang or a `set -u` "unbound variable" traceback.
+  local value=""
+  if [ ! -r /dev/tty ]; then
+    echo "ERROR: $var is not set and there is no terminal to prompt on." >&2
+    echo "       Pass it in the environment instead:" >&2
+    echo "       $var=... bash infra/azure-bootstrap.sh" >&2
+    return 1
+  fi
+  read -rsp "  $label: " value < /dev/tty; echo >&2
+  printf '%s' "$value"
+}
+
+echo "Secret values (input is not echoed):"
+V_URL="$(prompt_for SUPABASE_URL 'SUPABASE_URL')"
+V_KEY="$(prompt_for SUPABASE_KEY 'SUPABASE_KEY (service-role)')"
+V_JWT="$(prompt_for SUPABASE_JWT_SECRET 'SUPABASE_JWT_SECRET')"
+V_GEM="$(prompt_for GEMINI_API_KEY 'GEMINI_API_KEY')"
+
+for pair in "SUPABASE_URL:$V_URL" "SUPABASE_KEY:$V_KEY" "SUPABASE_JWT_SECRET:$V_JWT" "GEMINI_API_KEY:$V_GEM"; do
+  if [ -z "${pair#*:}" ]; then
+    echo "ERROR: ${pair%%:*} is empty. Aborting before creating anything." >&2
+    exit 1
+  fi
+done
 
 az containerapp create \
   --name "$APP" --resource-group "$RG" --environment "$ENVIRONMENT" \

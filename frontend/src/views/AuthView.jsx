@@ -15,6 +15,18 @@ import Card from "../components/Card";
  * in main.jsx and populates the session that `lib/api.js`'s authHeader() reads
  * before every subsequent request.
  */
+// Demo mode. Both set => this is the public deployment: show the seeded credentials and hide the
+// sign-up toggle, because the backend answers 403 there (SIGNUP_ENABLED=false) and offering a
+// button that cannot work is worse than not offering it.
+//
+// The password is deliberately in the bundle. It guards a read-only demo account on a public
+// resume link, so it is a doorbell, not a lock — anyone who can read the page is who it is for.
+// Deriving demo mode from these two rather than adding a separate VITE_SIGNUP_ENABLED keeps it
+// one concept: either there is a demo account to show or there is not.
+const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL;
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD;
+const DEMO_MODE = Boolean(DEMO_EMAIL && DEMO_PASSWORD);
+
 export default function AuthView({ onAuthed }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -76,6 +88,38 @@ export default function AuthView({ onAuthed }) {
             {mode === "login" ? "Log in to your therapist account" : "Create a therapist account"}
           </p>
         </div>
+
+        {DEMO_MODE && (
+          <div className="space-y-2 rounded-lg border border-brand-border bg-brand-bg p-3">
+            <p className="text-sm font-medium text-brand-fg">Demo account</p>
+            <dl className="space-y-0.5 text-sm text-brand-fg-muted">
+              <div className="flex gap-2">
+                <dt className="shrink-0">Email</dt>
+                <dd className="truncate font-mono text-brand-fg">{DEMO_EMAIL}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="shrink-0">Password</dt>
+                <dd className="truncate font-mono text-brand-fg">{DEMO_PASSWORD}</dd>
+              </div>
+            </dl>
+            {/* Fills the form rather than submitting it: the visitor still presses Log in, so
+                what happens next is something they chose, and a failure is legible as a failed
+                login rather than as a page that broke on load. */}
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => {
+                setEmail(DEMO_EMAIL);
+                setPassword(DEMO_PASSWORD);
+                setError("");
+                setNotice("");
+              }}
+            >
+              Use demo credentials
+            </Button>
+          </div>
+        )}
 
         <form onSubmit={submit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
@@ -150,18 +194,20 @@ export default function AuthView({ onAuthed }) {
               : mode === "login" ? "Log in" : "Sign up"}
           </Button>
 
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full"
-            onClick={() => {
-              setMode(mode === "login" ? "signup" : "login");
-              setError("");
-              setNotice("");
-            }}
-          >
-            {mode === "login" ? "Need an account? Sign up" : "Have an account? Log in"}
-          </Button>
+          {!DEMO_MODE && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => {
+                setMode(mode === "login" ? "signup" : "login");
+                setError("");
+                setNotice("");
+              }}
+            >
+              {mode === "login" ? "Need an account? Sign up" : "Have an account? Log in"}
+            </Button>
+          )}
         </form>
       </Card>
     </div>

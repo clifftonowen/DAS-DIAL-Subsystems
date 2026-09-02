@@ -66,6 +66,21 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+      # infra/schema.sql is what a human pastes into the SQL editor for a fresh hosted project;
+      # supabase/migrations/ is what the CLI applies for the e2e tiers. Both must exist, so one is
+      # a copy — and if they drift, CI passes against a schema production does not have, which is
+      # the kind of green build that is worse than a red one. Cheapest possible guard.
+      - name: Schema files match
+        working-directory: .
+        run: |
+          # `tr -d '\r'` on both sides: this repo is developed on Windows and the two files can
+          # legitimately be checked out with different line endings, which a byte-diff would
+          # report as every line changed. Only the SQL matters here.
+          if ! diff <(tail -n +12 supabase/migrations/20260101000000_schema.sql | tr -d '\r') <(tr -d '\r' < infra/schema.sql); then
+            echo "::error::supabase/migrations/20260101000000_schema.sql has drifted from infra/schema.sql."
+            echo "Fix with: cp infra/schema.sql supabase/migrations/20260101000000_schema.sql"
+            exit 1
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -139,51 +154,64 @@ jobs:
   backend-e2e:
     needs: [backend-unit, backend-integration]
     runs-on: ubuntu-latest
-    # SERIALISED ACROSS EVERY RUN OF THIS REPO, because the tiers below this line share one
-    # mutable resource: the Supabase test project, and within it a single TEST_LEARNER_ID.
+    # NO `concurrency` GROUP ANY MORE, and that is the point of the change.
     #
-    # What overlapping runs actually broke (PR #23): `uc4_activity` inserts one activity per run
-    # for that learner, and LearnerDetailPage renders the NEWEST activity — so each run's browser
-    # could be looking at the other run's row. UC4's delete-then-expect-a-rejected-write test then
-    # deleted its own activity while the page showed the other's, the write succeeded, and the
-    # test timed out waiting for an error that was never coming.
+    # This tier and the two below it used to serialise across every run of the repo, because they
+    # shared one mutable Supabase test project and a single TEST_LEARNER_ID inside it. What
+    # overlapping runs broke (PR #23): `uc4_activity` inserted one activity per run for that
+    # learner, LearnerDetailPage renders the NEWEST activity, so each run's browser could be
+    # looking at the other run's row — UC4's delete-then-expect-a-rejected-write test deleted its
+    # own activity while the page showed the other's, the write succeeded, and the test timed out
+    # waiting for an error that was never coming.
     #
-    # The group is a LITERAL, not keyed on ref: two different branches collide just as badly as
-    # two runs of one branch. cancel-in-progress is false because a half-finished run leaves rows
-    # behind in a shared project — queue behind it, never kill it.
-    #
-    # Known limit: GitHub keeps only one PENDING entry per group, so under heavy traffic a queued
-    # job can be cancelled. Better than corrupting a live run.
-    concurrency:
-      group: supabase-test-project
-      cancel-in-progress: false
+    # `supabase start` gives each run its own database, so there is no shared resource left to
+    # collide on and the three heaviest jobs stop queueing behind one another. It also removes the
+    # hosted test project entirely, which is what freed a slot on the 2-project free plan.
     defaults:
       run:
         working-directory: backend
+    # Literals, not secrets. The Supabase CLI's local stack always issues these same demo keys —
+    # they are published in its docs, grant nothing beyond a throwaway container, and being fixed
+    # is the whole reason the TEST_* ids below can be constants too.
+    #
+    # Those ids were previously five GitHub secrets, two of which were never set, which is why the
+    # browser tiers could not run at all. They now come from infra/seed.sql + supabase/seed_ci.sql,
+    # which rebuild from scratch every run, so they cannot drift and cannot go missing.
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-      SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
-      TEST_THERAPIST_EMAIL: ${{ secrets.TEST_THERAPIST_EMAIL }}
-      TEST_THERAPIST_PASSWORD: ${{ secrets.TEST_THERAPIST_PASSWORD }}
-      # A learner that exists in the test project, for UC2's profile-generation
-      # test. Without it that test self-skips and the job reports success having
-      # never exercised the use case, so check the -rs output below for skips.
-      # Seed the project (infra/seed.sql) BEFORE setting this secret. The learner
-      # needs a row in learner_sittings as well as in learners — "Generate Profile"
-      # promotes their newest sitting, and with none it returns 409 rather than
-      # skipping. seed.sql covers both for all ten of its learners.
-      TEST_LEARNER_ID: ${{ secrets.TEST_LEARNER_ID }}
-      # UC2's alt flow 2a: a learner with no sittings, so generate-profile refuses with 409.
-      # Its counterpart to TEST_LEARNER_ID above — same skip-not-fail behaviour when unset.
-      TEST_UNSCORED_LEARNER_ID: ${{ secrets.TEST_UNSCORED_LEARNER_ID }}
+      SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
+      SUPABASE_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      TEST_THERAPIST_EMAIL: ci-therapist@example.com
+      TEST_THERAPIST_PASSWORD: ci-test-password-123
+      # Has three sittings, so "Generate Profile" has a newest one to promote (200, not 409).
+      TEST_LEARNER_ID: 11111111-1111-1111-1111-111111111111
+      # UC2's alt flow 2a: no sittings at all, so generate-profile refuses with 409.
+      TEST_UNSCORED_LEARNER_ID: bbbbbbbb-0000-4000-8000-000000000002
+      # UC7/UC4: a learner who already owns a generated activity, and that activity's id. The
+      # activity id was never wired up before, so all six UC7 share tests skipped in every run.
+      TEST_SHARE_LEARNER_ID: 11111111-1111-1111-1111-111111111111
+      TEST_ACTIVITY_ID: cccccccc-0000-4000-8000-000000000003
+      # The app never reaches an LLM in this tier, but Settings.verify refuses to boot when the
+      # embedding provider and the vector column disagree, so pin the pair explicitly.
+      EMBEDDING_PROVIDER: ollama
+      USE_EMBEDDING_ALT: "false"
+      SIGNUP_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      # Runs at the repo root, not backend/ — config.toml and the migrations live in supabase/.
+      - name: Start local Supabase
+        working-directory: .
+        run: supabase start
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt -r requirements-dev.txt
+      # -rs still prints the skip reasons. Nothing should skip now; if something does, that is a
+      # fixture that went missing rather than an unconfigured checkout.
       - run: pytest -m e2e -rs
 
   # ------------------------------------------------------------------- system
@@ -193,28 +221,31 @@ jobs:
     # also puts the three secret-backed jobs in a strict chain: see the concurrency note below.
     needs: [frontend-unit, frontend-integration, backend-e2e]
     runs-on: ubuntu-latest
-    # Same shared Supabase test project as `backend-e2e` — same group. See the note there.
-    concurrency:
-      group: supabase-test-project
-      cancel-in-progress: false
+    # No concurrency group: `supabase start` gives this run its own database. See backend-e2e.
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-      SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
-      TEST_THERAPIST_EMAIL: ${{ secrets.TEST_THERAPIST_EMAIL }}
-      TEST_THERAPIST_PASSWORD: ${{ secrets.TEST_THERAPIST_PASSWORD }}
-      TEST_LEARNER_ID: ${{ secrets.TEST_LEARNER_ID }}
-      # THE OTHER TWO LEARNERS THE BROWSER TIER NEEDS. Without them UC2's ST-2.2, UC3's ST-3.2 and
-      # all of UC7 self-skip, and the job still reports success — the same silent-hole problem the
-      # TEST_LEARNER_ID note above describes, which is why `-rs` is on the pytest call.
-      #   TEST_UNSCORED_LEARNER_ID  a learner with NO rows in learner_sittings
-      #   TEST_SHARE_LEARNER_ID     a learner who already has a generated learning activity
-      TEST_UNSCORED_LEARNER_ID: ${{ secrets.TEST_UNSCORED_LEARNER_ID }}
-      TEST_SHARE_LEARNER_ID: ${{ secrets.TEST_SHARE_LEARNER_ID }}
+      SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
+      SUPABASE_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      TEST_THERAPIST_EMAIL: ci-therapist@example.com
+      TEST_THERAPIST_PASSWORD: ci-test-password-123
+      # Seeded fixtures, not secrets. UC2's ST-2.2, UC3's ST-3.2 and all of UC7 used to self-skip
+      # here because two of these were never set as secrets and the job still reported success.
+      TEST_LEARNER_ID: 11111111-1111-1111-1111-111111111111
+      TEST_UNSCORED_LEARNER_ID: bbbbbbbb-0000-4000-8000-000000000002
+      TEST_SHARE_LEARNER_ID: 11111111-1111-1111-1111-111111111111
+      TEST_ACTIVITY_ID: cccccccc-0000-4000-8000-000000000003
+      EMBEDDING_PROVIDER: ollama
+      USE_EMBEDDING_ALT: "false"
+      SIGNUP_ENABLED: "true"
       FRONTEND_URL: http://127.0.0.1:4173
       SYSTEM_ARTIFACT_DIR: ${{ github.workspace }}/test-artifacts
     steps:
       - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start local Supabase
+        run: supabase start
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -249,8 +280,11 @@ jobs:
         working-directory: frontend
         env:
           VITE_API_URL: http://127.0.0.1:8000
-          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # The local stack's fixed anon key, matching SUPABASE_URL above. The browser needs the
+          # SAME project the API is talking to: the UI holds its session in the Supabase client,
+          # so pointing it at a different project logs the user out mid-test.
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
         run: |
           npm ci
           npm run build
@@ -298,26 +332,34 @@ jobs:
   frontend-e2e:
     needs: [frontend-unit, frontend-integration, system]
     runs-on: ubuntu-latest
-    # Same shared Supabase test project again — same group. See the note on backend-e2e.
-    concurrency:
-      group: supabase-test-project
-      cancel-in-progress: false
+    # No concurrency group: `supabase start` gives this run its own database. See backend-e2e.
     env:
-      TEST_THERAPIST_EMAIL: ${{ secrets.TEST_THERAPIST_EMAIL }}
-      TEST_THERAPIST_PASSWORD: ${{ secrets.TEST_THERAPIST_PASSWORD }}
-      # The specs need a learner as well as a login, and skip individually without one. Missing
-      # these does NOT fail the job — login, sign-up, upload and view-learners still run, so the
-      # "no browser tests ran" check below stays green while UC2, UC3, UC4 and UC7 are silently
-      # absent. Set all three, or the tier covers half of what its name suggests.
-      #   TEST_LEARNER_ID           a learner WITH DIAL marks          (UC2, UC3)
-      #   TEST_UNSCORED_LEARNER_ID  a learner with NO DIAL marks       (UC2, UC3)
+      SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
+      SUPABASE_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      TEST_THERAPIST_EMAIL: ci-therapist@example.com
+      TEST_THERAPIST_PASSWORD: ci-test-password-123
+      # Seeded fixtures. These three used to gate UC2, UC3, UC4 and UC7 individually, and two were
+      # never set — so those specs skipped while the "no browser tests ran" guard below stayed
+      # green on the handful that did run. The tier now covers what its name suggests.
+      #   TEST_LEARNER_ID           a learner WITH DIAL marks           (UC2, UC3)
+      #   TEST_UNSCORED_LEARNER_ID  a learner with NO DIAL marks        (UC2, UC3)
       #   TEST_SHARE_LEARNER_ID     a learner with a generated activity (UC4, UC7)
-      TEST_LEARNER_ID: ${{ secrets.TEST_LEARNER_ID }}
-      TEST_UNSCORED_LEARNER_ID: ${{ secrets.TEST_UNSCORED_LEARNER_ID }}
-      TEST_SHARE_LEARNER_ID: ${{ secrets.TEST_SHARE_LEARNER_ID }}
+      TEST_LEARNER_ID: 11111111-1111-1111-1111-111111111111
+      TEST_UNSCORED_LEARNER_ID: bbbbbbbb-0000-4000-8000-000000000002
+      TEST_SHARE_LEARNER_ID: 11111111-1111-1111-1111-111111111111
+      TEST_ACTIVITY_ID: cccccccc-0000-4000-8000-000000000003
+      EMBEDDING_PROVIDER: ollama
+      USE_EMBEDDING_ALT: "false"
+      SIGNUP_ENABLED: "true"
       FRONTEND_URL: http://127.0.0.1:4173
     steps:
       - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start local Supabase
+        run: supabase start
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -335,9 +377,10 @@ jobs:
       - name: Start backend (uvicorn)
         working-directory: backend
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
+          # SUPABASE_* deliberately NOT repeated here. They are set at job level, pointing at the
+          # local stack; a step-level copy would override those with the production secrets and
+          # this tier would drive a browser against the live project.
+          #
           # The browser loads the app from FRONTEND_URL and calls this API cross-origin, so that
           # exact origin must be allowed or log-in fails with "Failed to fetch" rather than an
           # HTTP error. Same reasoning as the `system` job.
@@ -352,8 +395,11 @@ jobs:
         working-directory: frontend
         env:
           VITE_API_URL: http://127.0.0.1:8000
-          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # The local stack's fixed anon key, matching SUPABASE_URL above. The browser needs the
+          # SAME project the API is talking to: the UI holds its session in the Supabase client,
+          # so pointing it at a different project logs the user out mid-test.
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
         run: |
           npm ci
           npx playwright install --with-deps chromium
@@ -438,24 +484,66 @@ jobs:
     concurrency:
       group: deploy-production
       cancel-in-progress: true
+    # id-token: write is required for OIDC login to Azure — without it azure/login fails with a
+    # message that never mentions permissions. packages: write is for pushing to ghcr.
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
-      # --- backend: DigitalOcean App Platform ------------------------------------------------
-      # App Platform builds the image itself from backend/Dockerfile, so there is no registry
-      # push here. It reads its own env vars (LLM_PROVIDER, EMBEDDING_PROVIDER,
-      # USE_EMBEDDING_ALT, MIN_SIMILARITY, CORS_ORIGINS, SIGNUP_ENABLED, the Supabase keys) from
-      # the app spec — they are NOT set here, because putting them in the workflow would mean a
-      # secret lands in a public repo's logs on the first careless `echo`.
-      - name: Install doctl
-        uses: digitalocean/action-doctl@v2
+      # --- backend: Azure Container Apps ------------------------------------------------------
+      # Azure replaced DigitalOcean App Platform: DO wound down its Student Pack participation
+      # and every credit expired 2026-08-01. Azure for Students needs no credit card, gives
+      # $100/year, and renews while enrolled.
+      #
+      # The image goes to ghcr, not Azure Container Registry. ACR Basic is ~$5/month and would
+      # burn the credit for nothing — this repo is public so ghcr is free, and the image holds no
+      # secrets (.dockerignore excludes .env; everything sensitive arrives as a runtime env var
+      # from the Container Apps secret store).
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
         with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Tagged by commit SHA, not `latest`. Container Apps creates a new revision only when the
+      # image reference actually changes, so a moving `latest` tag would leave the old revision
+      # serving and the deploy would look successful while changing nothing.
+      - name: Build and push API image
+        id: image
+        run: |
+          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')-api:${{ github.sha }}"
+          docker build -t "$IMAGE" backend
+          docker push "$IMAGE"
+          echo "ref=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      # Federated credentials, so there is no client secret stored anywhere. Pinned to pushes on
+      # main of this repo by the subject in infra/azure-bootstrap.sh.
+      - name: Authenticate to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Only the image and CORS origin are set here. The four real secrets stay in the Container
+      # Apps secret store, referenced by the env vars the bootstrap script created — they are
+      # never passed through this workflow and cannot end up in a log.
       - name: Deploy API
-        # --wait blocks until the deployment finishes, so a failed rollout fails this job instead
-        # of reporting success while App Platform is still building.
-        run: doctl apps create-deployment ${{ secrets.DO_APP_ID }} --wait
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az config set extension.use_dynamic_install=yes_without_prompt
+            az containerapp update \
+              --name "${{ secrets.AZURE_CONTAINERAPP }}" \
+              --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+              --image "${{ steps.image.outputs.ref }}" \
+              --set-env-vars CORS_ORIGINS="${{ secrets.PROD_FRONTEND_URL }}" \
+              -o none
 
       # --- frontend: Cloudflare Pages --------------------------------------------------------
       # Built here rather than by Pages' own git integration for one reason: the three VITE_*
@@ -478,6 +566,13 @@ jobs:
           # Public by design and safe to inline: row level security is what protects the data,
           # not the obscurity of this key.
           VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # Setting BOTH switches AuthView into demo mode: it shows these credentials and hides
+          # the sign-up toggle, which matches SIGNUP_ENABLED=false on the API. Stored as repo
+          # secrets for consistency with the rest of this block, but neither is really secret —
+          # they are printed on the login page on purpose. Leave them unset and the login screen
+          # behaves exactly as it does locally.
+          VITE_DEMO_EMAIL: ${{ secrets.DEMO_EMAIL }}
+          VITE_DEMO_PASSWORD: ${{ secrets.DEMO_PASSWORD }}
         # vite.config.js fails the build if any of the three is empty, so a missing secret stops
         # here instead of publishing a bundle that cannot reach the API.
         run: |

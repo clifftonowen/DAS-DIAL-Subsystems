@@ -544,6 +544,15 @@ jobs:
               --image "${{ steps.image.outputs.ref }}" \
               --set-env-vars CORS_ORIGINS="${{ secrets.PROD_FRONTEND_URL }}" \
               -o none
+            # The bootstrap creates the app on a public placeholder image that serves on 80,
+            # because no ghcr image exists yet at that point. uvicorn listens on 8000, so ingress
+            # has to move across the first time a real image lands. Idempotent, so it stays here
+            # rather than being a one-off someone has to remember.
+            az containerapp ingress update \
+              --name "${{ secrets.AZURE_CONTAINERAPP }}" \
+              --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+              --target-port 8000 \
+              -o none
 
       # --- frontend: Cloudflare Pages --------------------------------------------------------
       # Built here rather than by Pages' own git integration for one reason: the three VITE_*

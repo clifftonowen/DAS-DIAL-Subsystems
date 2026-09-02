@@ -34,7 +34,21 @@ LOCATION="${LOCATION:-eastasia}"
 ENVIRONMENT="${ENVIRONMENT:-das-dial-env}"
 APP="${APP:-das-dial-api}"
 REPO="clifftonowen/DAS-DIAL-Subsystems"
-IMAGE="ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')-api:bootstrap"
+
+# A PUBLIC PLACEHOLDER, deliberately not our own image. The real one is pushed to ghcr by the
+# deploy job, which cannot run until the GitHub secrets exist, which is what this script prints —
+# so at this moment there is no ghcr image to point at.
+#
+# Pointing at a not-yet-pushed tag does NOT fail softly: Container Apps refuses to provision the
+# revision at all ("DENIED: requested access to the resource is denied") and leaves the app in
+# ProvisioningState 'Failed', which then rejects every later `az containerapp update` with
+# (ResourceNotProvisioned). One unpullable tag bricks the app.
+#
+# Microsoft's quickstart image always pulls anonymously, so the app provisions and is ready for the
+# first real deploy to swap in. It serves on 80, hence PLACEHOLDER_PORT below; the deploy job moves
+# ingress to 8000 when it lands the real image.
+IMAGE="mcr.microsoft.com/k8se/quickstart:latest"
+PLACEHOLDER_PORT=80
 
 SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
 TENANT_ID="$(az account show --query tenantId -o tsv)"
@@ -120,7 +134,20 @@ for pair in "SUPABASE_URL:$V_URL" "SUPABASE_KEY:$V_KEY" "SUPABASE_JWT_SECRET:$V_
   fi
 done
 
-if az containerapp show --name "$APP" --resource-group "$RG" -o none 2>/dev/null; then
+APP_STATE="$(az containerapp show --name "$APP" --resource-group "$RG" \
+               --query properties.provisioningState -o tsv 2>/dev/null || true)"
+
+# A Failed app cannot be repaired by `update` — every call returns (ResourceNotProvisioned) — so
+# the only way forward is to delete and recreate it. This is the state an earlier run with an
+# unpullable image leaves behind, and without this the script can never get past it.
+if [ "$APP_STATE" = "Failed" ]; then
+  echo "  container app $APP is in ProvisioningState 'Failed' (usually an image it could not"
+  echo "  pull). Deleting it so it can be recreated — update cannot rescue a Failed app."
+  az containerapp delete --name "$APP" --resource-group "$RG" --yes -o none
+  APP_STATE=""
+fi
+
+if [ -n "$APP_STATE" ]; then
   echo "  container app $APP exists — updating its secrets and env instead of recreating."
   az containerapp secret set --name "$APP" --resource-group "$RG" \
     --secrets "supabase-url=$V_URL" "supabase-key=$V_KEY" "jwt-secret=$V_JWT" "gemini-key=$V_GEM" \
@@ -141,7 +168,7 @@ else
   az containerapp create \
     --name "$APP" --resource-group "$RG" --environment "$ENVIRONMENT" \
     --image "$IMAGE" \
-    --target-port 8000 --ingress external \
+    --target-port "$PLACEHOLDER_PORT" --ingress external \
     --min-replicas 1 --max-replicas 3 \
     --cpu 0.25 --memory 0.5Gi \
     --secrets "supabase-url=$V_URL" "supabase-key=$V_KEY" "jwt-secret=$V_JWT" "gemini-key=$V_GEM" \

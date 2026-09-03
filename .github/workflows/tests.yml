@@ -56,6 +56,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual trigger. The frontend's three VITE_* values are inlined at BUILD time, so changing one
+  # of them changes nothing until a build runs — and with no code change to push, there would
+  # otherwise be no way to rebuild. That is not hypothetical: the first deployment shipped a
+  # bundle pointing at the wrong Supabase project, and repointing the secret could not fix it
+  # without this.
+  workflow_dispatch:
 
 jobs:
   # ---------------------------------------------------------------- unit (be)

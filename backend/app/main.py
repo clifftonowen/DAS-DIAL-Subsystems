@@ -12,6 +12,36 @@ from app.routers import (auth, learners, profiles, activities,
 # against must agree, and a mismatch is invisible at every other layer — see Settings.verify.
 settings.verify()
 
+
+# Startup fingerprint of the credentials this process ACTUALLY received. Added after five
+# successive theories about why the deployed container got "400 API key not valid" from Gemini
+# while the identical key worked locally and the stored Azure secret tested clean — clobbered env
+# vars, a stale secret binding, trailing whitespace, command ordering, and a failed restart were
+# each proposed and each wrong. None of them could be settled by inspecting Azure from outside,
+# because every one of those explanations produces the same symptom.
+#
+# Length and last four characters only: enough to tell "empty", "truncated", "padded" and "a
+# different key" apart, and never enough to reconstruct the credential. Goes to the platform log,
+# which is not public, not to /health, which is.
+def _fingerprint(name: str, value: str) -> str:
+    if not value:
+        return f"{name}=MISSING/EMPTY"
+    return f"{name}=len:{len(value)} tail:…{value[-4:]} stripped_len:{len(value.strip())}"
+
+
+print(
+    "[startup] "
+    + "  ".join([
+        _fingerprint("GEMINI_API_KEY", settings.gemini_api_key),
+        _fingerprint("SUPABASE_KEY", settings.supabase_key),
+        f"embedding_provider={settings.embedding_provider}",
+        f"embedding_model={settings.gemini_embedding_model}",
+        f"use_embedding_alt={settings.use_embedding_alt}",
+        f"min_similarity={settings.min_similarity}",
+    ]),
+    flush=True,
+)
+
 app = FastAPI(title=settings.app_name)
 
 

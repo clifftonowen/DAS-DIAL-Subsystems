@@ -17,7 +17,7 @@
 //     ├── <DashboardSidebar />     — left column
 //     └── <main>   <Outlet />      — right column, scrollable
 
-import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Outlet, Link } from "react-router-dom";
 import Brand from "../components/Brand";
 import ProfileMenu from "../components/ProfileMenu";
 import DashboardSidebar from "../components/DashboardSidebar";
@@ -43,7 +43,17 @@ function DashboardShell({ session }) {
       <header className="shell-header flex items-center justify-between
                          border-b border-brand-border bg-white px-6 py-3
                          sticky top-0 z-10">
-        <Brand />
+        {/* The wordmark doubles as the way home, which is what people try first.
+            The Link wraps Brand here rather than living inside it: AuthView renders the
+            same component with no Router above it, and a Link outside a Router throws. */}
+        <Link
+          to="/"
+          aria-label="DAS D.I.A.L — go to dashboard"
+          className="rounded-lg focus-visible:outline-none focus-visible:ring-4
+                     focus-visible:ring-brand-ring/40 hover:opacity-80 transition-opacity"
+        >
+          <Brand />
+        </Link>
         {/* Profile dropdown (avatar + email + Sign out) — top-right */}
         <ProfileMenu session={session} />
       </header>

@@ -256,24 +256,37 @@ def test_it_2_32_a_driver_failure_is_not_translated(client, auth_ok, fake_supaba
     (`LearnerRepository.save`) is unwrapped in exactly the same way, so the finding covers both;
     naming the read here keeps the test honest about which call it actually demonstrates.
 
-    In production FastAPI's handler still turns that into a 500, so the therapist sees the right
-    status by accident; what is lost is the `detail` the clause would have supplied. The test
-    asserts what the code ACTUALLY does, so that wrapping the repository later makes this test
-    fail loudly and tells the next person to update it, rather than a fiction that would pass
-    either way.
+    In production the therapist sees the right status by accident; what is lost is the `detail`
+    the clause would have supplied. The test asserts what the code ACTUALLY does, so that
+    wrapping the repository later makes this test fail loudly and tells the next person to update
+    it, rather than a fiction that would pass either way.
 
     Fix belongs with the repository layer, not here: wrap `.execute()` in
     `LearnerRepository.save` the way `AssessmentRepository` already does.
+
+    UPDATED when `main.keep_cors_headers_on_errors` was added. This used to assert
+    `pytest.raises(RuntimeError)` — the exception escaped all the way out and TestClient
+    re-raised it, which was the evidence that nothing caught it. That middleware now catches it
+    and returns a JSON 500, so the escape is no longer observable from here.
+
+    THE DEFECT THIS TEST DOCUMENTS IS UNCHANGED. The repository still calls `.execute()` bare,
+    `routers/profiles.py`'s `except StorageError` clause is still unreachable, and the specific
+    `detail` it would have supplied is still lost — the generic middleware message below is
+    exactly the evidence of that, since a caught StorageError would have produced its own text.
     """
     fake_supabase(
         seed={"learners": [learner_row()], "learner_sittings": [sitting_row()]},
         fail_on_execute=RuntimeError("connection refused"),
     )
 
-    # Not `assert response.status_code == 500` — TestClient re-raises unhandled server
-    # exceptions, which is precisely the evidence that no handler caught it.
-    with pytest.raises(RuntimeError, match="connection refused"):
-        client.post(f"/profiles/{LEARNER_ID}")
+    response = client.post(f"/profiles/{LEARNER_ID}", headers={"Origin": "http://localhost:5173"})
+
+    assert response.status_code == 500
+    # The GENERIC message, not one from the StorageError clause — that clause is still dead code.
+    assert response.json()["detail"] == "The server hit an unexpected error. Please try again."
+    # The reason the middleware exists: without this header the browser discards the response and
+    # `fetch` throws "Failed to fetch", so a server bug reaches the UI disguised as a network one.
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
 
 def test_it_2_32b_the_storage_error_clause_would_work_if_anything_raised_it(

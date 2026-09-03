@@ -535,9 +535,28 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # Only the image and CORS origin are set here. The four real secrets stay in the Container
-      # Apps secret store, referenced by the env vars the bootstrap script created — they are
-      # never passed through this workflow and cannot end up in a log.
+      # Only the image, CORS origin and the retrieval gate are set here. The four real secrets
+      # stay in the Container Apps secret store, referenced by the env vars the bootstrap script
+      # created — they are never passed through this workflow and cannot end up in a log.
+      #
+      # MIN_SIMILARITY=0.60 is a DELIBERATE LOOSENING for the public demo, not the calibrated
+      # value. scripts/calibrate_gate.py derives 0.71 from the golden set, but that set is
+      # hand-written natural queries, and production builds something much thinner — e.g.
+      # "literacy activity targeting phonics 3.8/10". Measured across 9 seeded learners those
+      # score 0.6666-0.7359, while the worst junk probe (junk_maths_lookalike) scores 0.6859.
+      # The two distributions OVERLAP: two real learners score below that junk query, so no
+      # threshold both admits every learner and refuses every probe.
+      #
+      # What each choice costs, measured:
+      #   0.71  5/9 learners, 0/7 junk   (calibrated, but refuses nearly half the demo)
+      #   0.70  7/9 learners, 0/7 junk   (strictly better than 0.71 — free)
+      #   0.60  9/9 learners, 1/7 junk   (admits junk_maths_lookalike at 0.6859)
+      #   0.50  9/9 learners, 5/7 junk   (the old default; unacceptable)
+      #
+      # 0.60 trades the one near-miss probe for every learner demoing cleanly. Blatant off-topic
+      # queries (football 0.5388, medical 0.5292, recipe 0.4866) are still refused. THE REAL FIX
+      # is the query builder — emit concept/stage language instead of a mark fraction — after
+      # which this should be re-derived and tightened again.
       - name: Deploy API
         uses: azure/cli@v2
         with:
@@ -548,7 +567,7 @@ jobs:
               --name "${{ secrets.AZURE_CONTAINERAPP }}" \
               --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
               --image "${{ steps.image.outputs.ref }}" \
-              --set-env-vars CORS_ORIGINS="${{ secrets.PROD_FRONTEND_URL }}" \
+              --set-env-vars CORS_ORIGINS="${{ secrets.PROD_FRONTEND_URL }}" MIN_SIMILARITY=0.60 \
               -o none
             # The bootstrap creates the app on a public placeholder image that serves on 80,
             # because no ghcr image exists yet at that point. uvicorn listens on 8000, so ingress

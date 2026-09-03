@@ -51,6 +51,23 @@ class Settings(BaseSettings):
     # would widen it is nomic WITH its task prefixes (see ollama_use_task_prefixes below), and
     # gemini-embedding-001 already separates 21x better (window 0.041, gate 0.71) if the ranking
     # trade-off is ever judged worth it.
+    # MEASURED 2026-09-03, and it complicates everything above: the golden set is NOT
+    # representative of the queries this app actually sends. calibrate_gate derives its numbers
+    # from hand-written natural queries ("adverb ly suffix practice"), but the production query
+    # builder emits a thin, generic string with a mark fraction in it —
+    # "literacy activity targeting phonics 3.8/10" — which embeds to a noticeably weaker vector.
+    #
+    # Across 9 seeded learners those production queries score 0.6666-0.7359, against a worst junk
+    # probe (junk_maths_lookalike) of 0.6859. The distributions OVERLAP: two real learners score
+    # BELOW that junk query, so no threshold both admits every learner and refuses every probe.
+    # calibrate_gate would report "no safe threshold" if it were fed these queries.
+    #
+    # The deployed value is 0.60 (set in the deploy job), chosen knowingly: 9/9 learners at the
+    # cost of admitting that one near-miss probe. 0.70 would be 7/9 with nothing admitted.
+    #
+    # THE GATE IS NOT THE BUG. Fix the query builder to emit concept and stage language matching
+    # the corpus rather than a mark fraction, then re-derive this against production-shaped
+    # queries and tighten it again.
     min_similarity: float = 0.50
 
     # Gemini backend — generation and embedding are separate classes with separate models.

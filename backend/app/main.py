@@ -1,4 +1,5 @@
 """DAS D.I.A.L API entrypoint. Run: uvicorn app.main:app --reload"""
+import hashlib
 import traceback
 
 from fastapi import FastAPI
@@ -20,13 +21,20 @@ settings.verify()
 # each proposed and each wrong. None of them could be settled by inspecting Azure from outside,
 # because every one of those explanations produces the same symptom.
 #
-# Length and last four characters only: enough to tell "empty", "truncated", "padded" and "a
-# different key" apart, and never enough to reconstruct the credential. Goes to the platform log,
-# which is not public, not to /health, which is.
+# Length and a TRUNCATED SHA-256, never any characters of the credential itself. An earlier
+# version logged the last four characters, which is common practice but still copies key material
+# out of the secret store and into a log system with different access control and retention —
+# especially wrong for SUPABASE_KEY, which is a service-role JWT.
+#
+# The hash is as diagnostic and leaks nothing: compare it against a locally computed
+# `sha256(known_good).hexdigest()[:8]` to prove same-or-different without either side revealing
+# the value. 8 hex characters is far too short to attack, and a preimage would need the key
+# already. Goes to the platform log, not to /health, which is public.
 def _fingerprint(name: str, value: str) -> str:
     if not value:
         return f"{name}=MISSING/EMPTY"
-    return f"{name}=len:{len(value)} tail:…{value[-4:]} stripped_len:{len(value.strip())}"
+    digest = hashlib.sha256(value.encode()).hexdigest()[:8]
+    return f"{name}=len:{len(value)} sha256:{digest} stripped_len:{len(value.strip())}"
 
 
 print(
